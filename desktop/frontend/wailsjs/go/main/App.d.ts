@@ -22,7 +22,11 @@ export function AcceptAIAgentItem(arg1:main.AIAgentItemRequest):Promise<service.
 
 export function AcceptAISuggestion(arg1:main.AIAcceptRequest):Promise<service.AIAcceptResult>;
 
+export function AccountKinds():Promise<main.AccountKindsView>;
+
 export function AccountOptions():Promise<Array<service.AccountOption>>;
+
+export function Accounts():Promise<service.AccountsView>;
 
 export function ActiveContacts(arg1:string,arg2:string):Promise<Array<service.ActiveContactsView>>;
 
@@ -93,6 +97,8 @@ export function CreateDemoBook(arg1:number):Promise<service.DemoResult>;
 export function CurrentBook():Promise<main.BookStatus>;
 
 export function DefaultBookDir():Promise<string>;
+
+export function DeleteAccount(arg1:string):Promise<void>;
 
 export function DeleteDepartment(arg1:number):Promise<void>;
 
@@ -204,6 +210,8 @@ export function SaveAIPromptConfig(arg1:service.AIPromptInput):Promise<void>;
 
 export function SaveAIProvider(arg1:sqlite.AIProviderConfig):Promise<number>;
 
+export function SaveAccount(arg1:service.AccountInput):Promise<service.AccountRow>;
+
 export function SaveAndPost(arg1:main.VoucherRequest):Promise<service.VoucherDetail>;
 
 export function SaveAuditSettings(arg1:service.LogSettings):Promise<void>;
@@ -227,6 +235,8 @@ export function SaveInvoice(arg1:main.InvoiceRequest):Promise<service.InvoiceVie
 export function SaveVoucher(arg1:main.VoucherRequest):Promise<service.VoucherDetail>;
 
 export function SchemeTemplate(arg1:string):Promise<payroll.InsuranceScheme>;
+
+export function SetAccountEnabled(arg1:string,arg2:boolean):Promise<void>;
 
 export function SetBankSuggestion(arg1:main.BankSuggestionRequest):Promise<service.BankFlowView>;
 

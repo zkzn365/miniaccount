@@ -34,8 +34,16 @@ export function AcceptAISuggestion(arg1) {
   return window['go']['main']['App']['AcceptAISuggestion'](arg1);
 }
 
+export function AccountKinds() {
+  return window['go']['main']['App']['AccountKinds']();
+}
+
 export function AccountOptions() {
   return window['go']['main']['App']['AccountOptions']();
+}
+
+export function Accounts() {
+  return window['go']['main']['App']['Accounts']();
 }
 
 export function ActiveContacts(arg1, arg2) {
@@ -176,6 +184,10 @@ export function CurrentBook() {
 
 export function DefaultBookDir() {
   return window['go']['main']['App']['DefaultBookDir']();
+}
+
+export function DeleteAccount(arg1) {
+  return window['go']['main']['App']['DeleteAccount'](arg1);
 }
 
 export function DeleteDepartment(arg1) {
@@ -398,6 +410,10 @@ export function SaveAIProvider(arg1) {
   return window['go']['main']['App']['SaveAIProvider'](arg1);
 }
 
+export function SaveAccount(arg1) {
+  return window['go']['main']['App']['SaveAccount'](arg1);
+}
+
 export function SaveAndPost(arg1) {
   return window['go']['main']['App']['SaveAndPost'](arg1);
 }
@@ -444,6 +460,10 @@ export function SaveVoucher(arg1) {
 
 export function SchemeTemplate(arg1) {
   return window['go']['main']['App']['SchemeTemplate'](arg1);
+}
+
+export function SetAccountEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetAccountEnabled'](arg1, arg2);
 }
 
 export function SetBankSuggestion(arg1) {

@@ -590,3 +590,54 @@ func isDigits(s string) bool {
 	}
 	return len(s) > 0
 }
+
+// Label 返回根类型的中文名（界面上显示用）。
+func (rt RootType) Label() string {
+	switch rt {
+	case RootAsset:
+		return "资产"
+	case RootLiability:
+		return "负债"
+	case RootEquity:
+		return "所有者权益"
+	case RootCost:
+		return "成本"
+	case RootIncome:
+		return "收入"
+	case RootExpense:
+		return "费用"
+	}
+	return string(rt)
+}
+
+// ValidateCode 校验科目编码是否符合 4-2-2-2 的分级规则。
+//
+// 规则：一级 4 位，其后每级 2 位，最长 4 级（4+2+2+2 = 10 位）。
+// 用长度判定层级，而不是相信调用方传进来的 level —— 两者不一致时，
+// 报表按编码前缀展开、凭证按 level 判层级，就会各说各话。
+func ValidateCode(code string) error {
+	n := len(code)
+	switch {
+	case n == 4:
+		return nil
+	case n == 6, n == 8, n == 10:
+		return nil
+	}
+	return fmt.Errorf("科目编码应当是 4/6/8/10 位数字（4-2-2-2 分级），当前 %q 是 %d 位",
+		code, n)
+}
+
+// LevelOfCode 由编码长度推出层级（4→1、6→2、8→3、10→4）。
+func LevelOfCode(code string) int {
+	switch len(code) {
+	case 4:
+		return 1
+	case 6:
+		return 2
+	case 8:
+		return 3
+	case 10:
+		return 4
+	}
+	return 0
+}

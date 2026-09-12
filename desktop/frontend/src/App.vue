@@ -5,7 +5,7 @@ import {
   Home, CalendarRange, Table2, BookOpen, Sparkles, Settings as Cog,
   Sun, Moon, PanelLeftClose, PanelLeftOpen, FileText, Landmark, Users,
   Receipt, Plane, Hourglass, FileCheck, Scale, Columns3, Sigma, Percent,
-  ScrollText,
+  ScrollText, ListTree,
 } from 'lucide-vue-next'
 import { refreshBook, bookState } from '@/lib/book'
 import Button from '@/components/ui/Button.vue'
@@ -21,7 +21,7 @@ const nav = router.getRoutes().filter((r) => r.meta?.title && !r.meta?.hidden)
 const icons = {
   Home, FileText, Receipt, Plane, Landmark, Users,
   CalendarRange, Table2, BookOpen, Hourglass, FileCheck, Scale, Columns3, Sigma, Percent,
-  Sparkles, Settings: Cog, ScrollText,
+  Sparkles, Settings: Cog, ScrollText, ListTree,
 }
 
 // 账套状态统一放在 lib/book.js —— 启动流程（main.js）与路由都用它，

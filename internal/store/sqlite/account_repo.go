@@ -164,13 +164,23 @@ func (r *AccountRepo) SetEnabled(ctx context.Context, tx *Tx, code string, enabl
 // 内部
 // ---------------------------------------------------------------------------
 
+// txQuerier 把 *Tx 适配成 rowQuerier。
+type txQuerier struct{ tx *Tx }
+
+func (t txQuerier) QueryRowContext(ctx context.Context, query string,
+	args ...any) *sql.Row {
+	// Tx.QueryRow 返回的是同一类 *sql.Row；这里用底层 q
+	return t.tx.q.QueryRowContext(ctx, query, args...)
+}
+
 // queryTx 在事务上执行科目查询，供过账校验使用。
 func (r *AccountRepo) queryTx(ctx context.Context, tx *Tx, sqlText string, args ...any) ([]*account.Account, error) {
 	rows, err := tx.Query(ctx, sqlText, args...)
 	if err != nil {
 		return nil, err
 	}
-	return r.scanAccounts(rows)
+	// Tx 上没有 QueryRowContext：包一层
+	return r.scanAccounts(ctx, txQuerier{tx}, rows)
 }
 
 func (r *AccountRepo) query(ctx context.Context, q querier, sqlText string, args ...any) ([]*account.Account, error) {
@@ -178,10 +188,21 @@ func (r *AccountRepo) query(ctx context.Context, q querier, sqlText string, args
 	if err != nil {
 		return nil, translateErr(err)
 	}
-	return r.scanAccounts(rows)
+	return r.scanAccounts(ctx, q, rows)
 }
 
-func (r *AccountRepo) scanAccounts(rows *sql.Rows) ([]*account.Account, error) {
+// rowQuerier 是「能查一行」的最小接口。
+//
+// 不直接用 querier：*Tx 的方法名是 Query/QueryRow，与 sql.DB 的
+// QueryContext/QueryRowContext 不同名 —— 为了一个补查去给 Tx 加一套
+// 别名方法不值当。接口要按**用到的能力**定义，不是按实现者有什么。
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func (r *AccountRepo) scanAccounts(ctx context.Context, q rowQuerier,
+	rows *sql.Rows) ([]*account.Account, error) {
+
 	defer rows.Close()
 
 	var out []*account.Account
@@ -216,20 +237,41 @@ func (r *AccountRepo) scanAccounts(rows *sql.Rows) ([]*account.Account, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	// 回填 ParentCode 并校验树结构
+	// ★ 先关游标再补查询。
+	//
+	// 连接池是 MaxOpenConns(1)：游标还开着的时候再发一条查询会**永久等锁**，
+	// 表现为整个程序卡死（不是报错）。这个坑本项目踩过一次了。
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	// 回填 ParentCode
 	byID := make(map[int64]string, len(out))
 	for _, a := range out {
 		byID[a.ID] = a.Code
 	}
 	for _, a := range out {
-		if a.ParentID != nil {
-			code, ok := byID[*a.ParentID]
-			if !ok {
-				return nil, fmt.Errorf("%w: 科目 %s 的父科目 id=%d",
-					ErrNotFound, a.Code, *a.ParentID)
-			}
-			a.ParentCode = code
+		if a.ParentID == nil {
+			continue
 		}
+		if code, ok := byID[*a.ParentID]; ok {
+			a.ParentCode = code
+			continue
+		}
+		// ★ 单行查询（GetByCode / ByPrefix）时父科目不在结果集里 ——
+		// 这不是「科目不存在」，只是「这次没查它」。
+		//
+		// 原来这里直接报 ErrNotFound，于是**任何一个有上级的科目都查不出来**：
+		// 按编码取科目一律失败，调用方还以为是「没这个科目」，
+		// 转头去新建，最后撞在唯一约束上。
+		var code string
+		err := q.QueryRowContext(ctx,
+			`SELECT code FROM account WHERE id = ?`, *a.ParentID).Scan(&code)
+		if err != nil {
+			return nil, fmt.Errorf("%w: 科目 %s 的父科目 id=%d 不存在（科目树被改坏了）",
+				ErrNotFound, a.Code, *a.ParentID)
+		}
+		a.ParentCode = code
 	}
 	return out, nil
 }
@@ -373,3 +415,172 @@ var (
 	_ querier = (*sql.Tx)(nil)
 	_         = money.Zero
 )
+
+// ---------------------------------------------------------------------------
+// 科目使用情况
+// ---------------------------------------------------------------------------
+
+// AccountUsage 是一个科目被用过多少、还剩多少。
+//
+// ★ 「能不能删」完全取决于它：被分录引用过的科目删掉，
+// 历史凭证就会指向一个不存在的科目 —— 报表凭空少一块，且极难排查。
+type AccountUsage struct {
+	// Entries 是引用过这个科目的分录行数。
+	//
+	// ★ 统计的是 voucher_entry（**所有凭证**，含草稿），不是 ledger_entry。
+	//
+	// 踩过一次：原来只数 ledger_entry，而草稿凭证不写总账 ——
+	// 于是「这个科目还没被用过，可以删」，实际 voucher_entry 里有引用，
+	// DELETE 直接撞外键约束，用户看到的是一句数据库错误。
+	// 判断「能不能删」要看**所有引用**，不只是已过账的那部分。
+	Entries int `json:"entries"`
+	// Balance 是当前余额（分，借贷相抵后的净值）。
+	Balance money.Money `json:"balance"`
+	// Children 是下级科目数。
+	Children int `json:"children"`
+}
+
+// UsageOf 查单个科目的使用情况。
+func (r *AccountRepo) UsageOf(ctx context.Context, id int64) (AccountUsage, error) {
+	var u AccountUsage
+	err := r.db.sql.QueryRowContext(ctx, `
+		SELECT
+		  (SELECT COUNT(*) FROM voucher_entry WHERE account_id = ?),
+		  (SELECT COALESCE(SUM(debit - credit), 0) FROM ledger_entry WHERE account_id = ?),
+		  (SELECT COUNT(*) FROM account WHERE parent_id = ?)`,
+		id, id, id).Scan(&u.Entries, &u.Balance, &u.Children)
+	if err != nil {
+		return u, translateErr(err)
+	}
+	return u, nil
+}
+
+// Usage 一次查出全部科目的使用情况（科目管理页要整表显示）。
+//
+// 用三条聚合查询再拼，而不是每行一次子查询：190 个科目 × 3 次查询
+// 在界面打开时会明显卡一下，而这是每次进页面都要跑的。
+func (r *AccountRepo) Usage(ctx context.Context) (map[int64]AccountUsage, error) {
+	out := map[int64]AccountUsage{}
+
+	// 引用数取自 voucher_entry（含草稿）；余额取自 ledger_entry（只算已过账）
+	rows, err := r.db.sql.QueryContext(ctx, `
+		SELECT account_id, COUNT(*) FROM voucher_entry GROUP BY account_id`)
+	if err != nil {
+		return nil, translateErr(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		u := out[id]
+		u.Entries = n
+		out[id] = u
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+
+	// 余额：只算已过账（草稿不进总账）
+	rowsBal, err := r.db.sql.QueryContext(ctx, `
+		SELECT account_id, COALESCE(SUM(debit - credit), 0)
+		  FROM ledger_entry GROUP BY account_id`)
+	if err != nil {
+		return nil, translateErr(err)
+	}
+	defer rowsBal.Close()
+	for rowsBal.Next() {
+		var id int64
+		var bal money.Money
+		if err := rowsBal.Scan(&id, &bal); err != nil {
+			return nil, err
+		}
+		u := out[id]
+		u.Balance = bal
+		out[id] = u
+	}
+	if err := rowsBal.Err(); err != nil {
+		return nil, err
+	}
+
+	// 下级数：父科目计数
+	rows2, err := r.db.sql.QueryContext(ctx, `
+		SELECT parent_id, COUNT(*) FROM account
+		 WHERE parent_id IS NOT NULL GROUP BY parent_id`)
+	if err != nil {
+		return nil, translateErr(err)
+	}
+	defer rows2.Close()
+	for rows2.Next() {
+		var id int64
+		var n int
+		if err := rows2.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		u := out[id]
+		u.Children = n
+		out[id] = u
+	}
+	return out, rows2.Err()
+}
+
+// SetLeaf 改「明细/汇总」属性（在明细科目下加子科目时，父科目要变成汇总）。
+func (r *AccountRepo) SetLeaf(ctx context.Context, tx *Tx, code string, leaf bool) error {
+	res, err := tx.Exec(ctx, `UPDATE account SET is_leaf = ? WHERE code = ?`,
+		boolInt(leaf), code)
+	if err != nil {
+		return translateErr(err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("科目 %s 不存在", code)
+	}
+	return nil
+}
+
+// UpdateMeta 改科目的可变部分（名称、备注、辅助核算、明细/汇总）。
+//
+// ★ 只能改这些。编码、父科目、余额方向、大类一律不动 ——
+// 那些是账已经记过的依据，改了历史就对不上。
+func (r *AccountRepo) UpdateMeta(ctx context.Context, code, name, remark string,
+	aux []account.AuxType, leaf bool) error {
+
+	return r.db.WithTx(ctx, func(tx *Tx) error {
+		res, err := tx.Exec(ctx, `
+			UPDATE account SET name = ?, remark = ?, aux_types = ?, is_leaf = ?
+			 WHERE code = ?`,
+			name, remark, encodeAuxTypes(aux), boolInt(leaf), code)
+		if err != nil {
+			return translateErr(err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return fmt.Errorf("科目 %s 不存在", code)
+		}
+		return nil
+	})
+}
+
+// Delete 删除科目（调用方必须已确认它从未被用过）。
+func (r *AccountRepo) Delete(ctx context.Context, id int64) error {
+	return r.db.WithTx(ctx, func(tx *Tx) error {
+		res, err := tx.Exec(ctx, `DELETE FROM account WHERE id = ?`, id)
+		if err != nil {
+			return translateErr(err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return fmt.Errorf("科目不存在")
+		}
+		return nil
+	})
+}
+
+// encodeAuxTypes 把辅助核算维度编码成库里存的形式。
+func encodeAuxTypes(aux []account.AuxType) string {
+	parts := make([]string, 0, len(aux))
+	for _, a := range aux {
+		parts = append(parts, string(a))
+	}
+	return strings.Join(parts, ",")
+}

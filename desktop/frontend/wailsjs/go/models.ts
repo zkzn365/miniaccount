@@ -216,6 +216,54 @@ export namespace main {
 	        this.direction = source["direction"];
 	    }
 	}
+	export class AccountKindOption {
+	    value: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountKindOption(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.label = source["label"];
+	    }
+	}
+	export class AccountKindsView {
+	    rootTypes: AccountKindOption[];
+	    auxTypes: AccountKindOption[];
+	    maxLevel: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountKindsView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.rootTypes = this.convertValues(source["rootTypes"], AccountKindOption);
+	        this.auxTypes = this.convertValues(source["auxTypes"], AccountKindOption);
+	        this.maxLevel = source["maxLevel"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class AdjustSalaryRequest {
 	    id: number;
 	    baseSalary: string;
@@ -1986,6 +2034,32 @@ export namespace service {
 		    return a;
 		}
 	}
+	export class AccountInput {
+	    code: string;
+	    name: string;
+	    parentCode: string;
+	    rootType: string;
+	    balanceDir: string;
+	    auxTypes: string[];
+	    remark: string;
+	    isLeaf?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.name = source["name"];
+	        this.parentCode = source["parentCode"];
+	        this.rootType = source["rootType"];
+	        this.balanceDir = source["balanceDir"];
+	        this.auxTypes = source["auxTypes"];
+	        this.remark = source["remark"];
+	        this.isLeaf = source["isLeaf"];
+	    }
+	}
 	export class AccountOption {
 	    code: string;
 	    name: string;
@@ -2007,6 +2081,112 @@ export namespace service {
 	        this.auxTypes = source["auxTypes"];
 	        this.searchText = source["searchText"];
 	    }
+	}
+	export class AccountOptionItem {
+	    value: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountOptionItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.label = source["label"];
+	    }
+	}
+	export class AccountRow {
+	    id: number;
+	    code: string;
+	    name: string;
+	    fullName: string;
+	    parentCode: string;
+	    level: number;
+	    isLeaf: boolean;
+	    rootType: string;
+	    rootLabel: string;
+	    balanceDir: string;
+	    dirLabel: string;
+	    auxTypes: string[];
+	    auxLabels: string[];
+	    isEnabled: boolean;
+	    isPreset: boolean;
+	    remark: string;
+	    entryCount: number;
+	    balance: number;
+	    childCount: number;
+	    canDelete: boolean;
+	    reason?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.code = source["code"];
+	        this.name = source["name"];
+	        this.fullName = source["fullName"];
+	        this.parentCode = source["parentCode"];
+	        this.level = source["level"];
+	        this.isLeaf = source["isLeaf"];
+	        this.rootType = source["rootType"];
+	        this.rootLabel = source["rootLabel"];
+	        this.balanceDir = source["balanceDir"];
+	        this.dirLabel = source["dirLabel"];
+	        this.auxTypes = source["auxTypes"];
+	        this.auxLabels = source["auxLabels"];
+	        this.isEnabled = source["isEnabled"];
+	        this.isPreset = source["isPreset"];
+	        this.remark = source["remark"];
+	        this.entryCount = source["entryCount"];
+	        this.balance = source["balance"];
+	        this.childCount = source["childCount"];
+	        this.canDelete = source["canDelete"];
+	        this.reason = source["reason"];
+	    }
+	}
+	export class AccountsView {
+	    rows: AccountRow[];
+	    total: number;
+	    leafCount: number;
+	    rootTypes: AccountOptionItem[];
+	    auxTypes: AccountOptionItem[];
+	    maxLevel: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountsView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.rows = this.convertValues(source["rows"], AccountRow);
+	        this.total = source["total"];
+	        this.leafCount = source["leafCount"];
+	        this.rootTypes = this.convertValues(source["rootTypes"], AccountOptionItem);
+	        this.auxTypes = this.convertValues(source["auxTypes"], AccountOptionItem);
+	        this.maxLevel = source["maxLevel"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ActiveContactsView {
 	    id: number;
@@ -2713,6 +2893,8 @@ export namespace service {
 	}
 	export class ClosingPreview {
 	    period: string;
+	    year: number;
+	    month: number;
 	    steps: ClosingStep[];
 	    income: number;
 	    expense: number;
@@ -2727,6 +2909,8 @@ export namespace service {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.period = source["period"];
+	        this.year = source["year"];
+	        this.month = source["month"];
 	        this.steps = this.convertValues(source["steps"], ClosingStep);
 	        this.income = source["income"];
 	        this.expense = source["expense"];
