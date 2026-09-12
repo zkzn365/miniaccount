@@ -942,6 +942,79 @@ test('★ 固定资产次月起提、待摊当月就摊，计提出来是草稿'
   assert.ok(/结账/.test(t), `首页该说清楚过账发生在结账：${t.slice(0, 300)}`)
 })
 
+// ★ 凭证录入的列序：摘要在前、科目在后。
+//
+// 这是记账凭证的惯例列序（摘要 → 科目 → 借方 → 贷方），
+// 也是全程序其他表格的列序 —— 只有凭证编辑器和凭证详情是反的。
+// 反着排的后果是录入时手指先落在科目上：写下「买打印机」之前
+// 得先想好记哪个科目，而实际记账时人是先想到事、再想科目。
+test('★ 凭证录入：摘要排第一列、科目第二列', async () => {
+  await page.goto('/vouchers')
+  await settle(80)
+  await page.click('录入凭证')
+  await settle(80)
+
+  const tables = [...win.document.body.querySelectorAll('table')]
+  const t = tables.find((tb) => tb.querySelector('input[placeholder="本行摘要"]'))
+  assert.ok(t, '凭证编辑器里没找到分录表')
+
+  const heads = [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim())
+  assert.deepEqual(heads.slice(0, 4), ['#', '摘要', '科目', '辅助核算'],
+    `★ 列序不对，实际：${JSON.stringify(heads)}`)
+
+  // 表体也要跟着换 —— 只改表头会变成「标题与内容错位」，比原来更糟
+  const row = t.querySelector('tbody tr')
+  assert.ok(row, '分录表没有行')
+  const cells = [...row.children]
+  assert.ok(cells[1].querySelector('input[placeholder="本行摘要"]'),
+    `★ 第 2 列应当是摘要输入框，实际是：${cells[1].textContent.trim()}`)
+  assert.ok(/选择科目/.test(cells[2].textContent),
+    `★ 第 3 列应当是科目，实际是：${cells[2].textContent.trim()}`)
+
+  await page.click('取消')
+  await settle(30)
+})
+
+// 凭证详情（只读）用同一套列序，否则「录的时候摘要在前、
+// 查的时候科目前面」，看着像两张不同的表
+test('★ 凭证详情的列序与录入一致', async () => {
+  const list = await bundle.api.api.vouchers({ year: 0, month: 0 })
+  assert.equal(list.ok, true, list.fault?.message)
+  const one = (list.data ?? [])[0]
+  if (!one) {
+    // 当前账套一张凭证都没有时，先建一张再查
+    const d = await bundle.api.api.saveVoucher({
+      id: 0, word: '记', date: '2026-01-20', remark: '列序回归测试', createdBy: '李会计',
+      lines: [
+        { accountCode: '1001', summary: '列序回归测试', debitYuan: '1.00', creditYuan: '' },
+        { accountCode: '5001', summary: '列序回归测试', debitYuan: '', creditYuan: '1.00' },
+      ],
+    })
+    assert.equal(d.ok, true, d.fault?.message)
+  }
+
+  const after = await bundle.api.api.vouchers({ year: 0, month: 0 })
+  const v = (after.data ?? [])[0]
+  await page.goto('/vouchers')
+  await settle(80)
+  await bundle.api.api.voucherDetail(v.id) // 预热：确保详情能取到
+  const btn = [...win.document.body.querySelectorAll('button')]
+    .find((b) => (b.getAttribute('title') || '') === '查看详情')
+  assert.ok(btn, '凭证列表里没有「查看详情」按钮')
+  btn.dispatchEvent(new win.MouseEvent('click', { bubbles: true }))
+  await settle(150)
+
+  const tables = [...win.document.body.querySelectorAll('table')]
+  const t = tables.find((tb) => {
+    const h = [...tb.querySelectorAll('thead th')].map((x) => x.textContent.trim())
+    return h.includes('辅助核算') && h.includes('借方') && h.includes('贷方')
+  })
+  assert.ok(t, '凭证详情里没找到分录表')
+  const heads = [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim())
+  assert.deepEqual(heads.slice(0, 4), ['#', '摘要', '科目', '辅助核算'],
+    `★ 凭证详情的列序与录入不一致，实际：${JSON.stringify(heads)}`)
+})
+
 test('★ 结账真的能结掉（不是只把弹窗打开）', async () => {
   await page.goto('/periods')
   await settle(80)

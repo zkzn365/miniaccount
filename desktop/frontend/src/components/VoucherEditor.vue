@@ -359,8 +359,8 @@ async function save() {
           <thead>
             <tr class="border-b bg-muted/40">
               <th class="h-9 w-10 px-2 text-left text-xs font-medium text-muted-foreground">#</th>
-              <th class="h-9 px-2 text-left text-xs font-medium text-muted-foreground">科目</th>
               <th class="h-9 px-2 text-left text-xs font-medium text-muted-foreground">摘要</th>
+              <th class="h-9 px-2 text-left text-xs font-medium text-muted-foreground">科目</th>
               <th class="h-9 w-32 px-2 text-left text-xs font-medium text-muted-foreground">辅助核算</th>
               <th class="h-9 w-32 px-2 text-right text-xs font-medium text-muted-foreground">借方（元）</th>
               <th class="h-9 w-32 px-2 text-right text-xs font-medium text-muted-foreground">贷方（元）</th>
@@ -370,6 +370,13 @@ async function save() {
           <tbody>
             <tr v-for="(l, i) in form.lines" :key="i" class="border-b last:border-0">
               <td class="px-2 py-1 text-xs text-muted-foreground">{{ i + 1 }}</td>
+              <td class="px-2 py-1">
+                <input
+                  v-model="l.summary"
+                  class="w-full rounded border-0 bg-transparent px-1.5 py-1 text-sm focus:bg-accent/40 focus:outline-none"
+                  placeholder="本行摘要"
+                />
+              </td>
               <td class="px-2 py-1">
                 <button
                   class="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left hover:bg-accent/60"
@@ -381,13 +388,6 @@ async function save() {
                   </template>
                   <span v-else class="text-muted-foreground">选择科目…</span>
                 </button>
-              </td>
-              <td class="px-2 py-1">
-                <input
-                  v-model="l.summary"
-                  class="w-full rounded border-0 bg-transparent px-1.5 py-1 text-sm focus:bg-accent/40 focus:outline-none"
-                  placeholder="本行摘要"
-                />
               </td>
               <td class="px-2 py-1">
                 <div v-if="needAux(l).length" class="flex items-center gap-1">

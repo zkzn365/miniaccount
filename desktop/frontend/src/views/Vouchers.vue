@@ -300,8 +300,8 @@ const sourceIcon = (s) =>
             <thead>
               <tr class="border-b bg-muted/40">
                 <th class="h-8 px-3 text-left text-xs font-medium text-muted-foreground">#</th>
-                <th class="h-8 px-3 text-left text-xs font-medium text-muted-foreground">科目</th>
                 <th class="h-8 px-3 text-left text-xs font-medium text-muted-foreground">摘要</th>
+                <th class="h-8 px-3 text-left text-xs font-medium text-muted-foreground">科目</th>
                 <th class="h-8 px-3 text-left text-xs font-medium text-muted-foreground">辅助核算</th>
                 <th class="h-8 px-3 text-right text-xs font-medium text-muted-foreground">借方</th>
                 <th class="h-8 px-3 text-right text-xs font-medium text-muted-foreground">贷方</th>
@@ -310,11 +310,11 @@ const sourceIcon = (s) =>
             <tbody>
               <tr v-for="l in detail.lines" :key="l.lineNo" class="border-b last:border-0">
                 <td class="px-3 py-1.5 text-xs text-muted-foreground">{{ l.lineNo }}</td>
+                <td class="px-3 py-1.5">{{ l.summary }}</td>
                 <td class="px-3 py-1.5">
                   <span class="font-mono text-xs">{{ l.accountCode }}</span>
                   <span class="ml-1.5">{{ l.accountName }}</span>
                 </td>
-                <td class="px-3 py-1.5">{{ l.summary }}</td>
                 <td class="px-3 py-1.5 text-xs text-muted-foreground">{{ l.auxDesc || '—' }}</td>
                 <td class="num px-3 py-1.5 text-[var(--debit)]">{{ fmtMoney(l.debit, { blankZero: true }) }}</td>
                 <td class="num px-3 py-1.5 text-[var(--credit)]">{{ fmtMoney(l.credit, { blankZero: true }) }}</td>
