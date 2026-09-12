@@ -222,6 +222,21 @@ const page = {
     el.dispatchEvent(new win.Event('input', { bubbles: true }))
     await settle(30)
   },
+  /**
+   * 按可见文字**精确**点一个按钮。
+   *
+   * 标签页要用它：includes 匹配下「部门」会命中「新建部门」，
+   * 而后者在别的标签页里，点不到 —— 测试会以「找不到按钮」这种
+   * 看不出原因的形态失败。
+   */
+  clickExact: async (label) => {
+    const norm = (x) => x.replace(/\s+/g, '')
+    const btn = [...win.document.body.querySelectorAll('button')]
+      .find((b) => norm(b.textContent) === norm(label))
+    assert.ok(btn, `界面上找不到「${label}」按钮（精确匹配）`)
+    btn.dispatchEvent(new win.MouseEvent('click', { bubbles: true }))
+    await settle(20)
+  },
   /** 按文字找一个按钮元素（不点）。同样搜整个 document，理由见 input。 */
   button: (label) => {
     const btn = [...win.document.body.querySelectorAll('button')]
@@ -725,11 +740,17 @@ test('★ 结账真的能结掉（不是只把弹窗打开）', async () => {
 //
 // 测的是「用户能不能做到这件事」，不是「方法存不存在」。
 
-test('★ 部门能新建、改名、停用（界面到后端整条路）', async () => {
-  await page.goto('/payroll')
+/** 辅助核算页的一个标签页。★ 部门与员工已经**从工资页迁到这里** ——
+ *  它们的用途是辅助核算（记费用、记往来时挑一个），工资页只关心工资怎么算。 */
+async function openAux(tabName) {
+  await page.goto('/auxiliary')
   await settle(80)
-  await page.click('部门')
+  await page.clickExact(tabName)
   await settle(60)
+}
+
+test('★ 部门能新建、改名、停用（界面到后端整条路）', async () => {
+  await openAux('部门')
 
   const before = await bundle.api.api.departments()
   assert.equal(before.ok, true, before.fault?.message)
@@ -760,6 +781,54 @@ test('★ 部门能新建、改名、停用（界面到后端整条路）', asyn
   assert.equal(del.ok, true, `没人用的部门应当能删掉：${del.fault?.message}`)
   const final = await bundle.api.api.departments()
   assert.ok(!(final.data ?? []).some((d) => d.id === made.id), '删完还在列表里')
+})
+
+test('★ 工资页不再维护部门与员工档案（已迁到辅助核算）', async () => {
+  await page.goto('/payroll')
+  await settle(80)
+  const t = page.text()
+  assert.ok(!t.includes('新建部门'),
+    `工资页还留着「新建部门」—— 同一份档案两处维护，改一处漏一处。实际：${t.slice(0, 300)}`)
+  assert.ok(!t.includes('新增员工'),
+    `工资页还留着「新增员工」—— 档案维护应当只在辅助核算页。实际：${t.slice(0, 300)}`)
+  // 工资单本身还在
+  assert.ok(t.includes('工资单'), `工资页把工资单也删掉了：${t.slice(0, 300)}`)
+})
+
+test('★ 往来单位（客户 / 供应商）能在界面上建、停用、删', async () => {
+  // 这一条守的是「档案管理」这一半：原来只有 ContactOptions，
+  // 一个只列启用中的下拉 —— 新建不了，停用之后再也看不到、也就改不回来。
+  await openAux('客户')
+
+  const before = await bundle.api.api.contacts('')
+  assert.equal(before.ok, true, before.fault?.message)
+  const n0 = before.data.length
+
+  await page.click('新建客户')
+  await settle(30)
+  await page.type(page.input('input[placeholder="杭州云帆科技有限公司"]'), '回归测试客户')
+  await page.click('保存')
+  await settle(120)
+
+  const after = await bundle.api.api.contacts('')
+  const made = (after.data ?? []).find((c) => c.name === '回归测试客户')
+  assert.ok(made, `新建的客户没出现在列表里：${JSON.stringify(after.data)}`)
+  assert.equal(after.data.length, n0 + 1)
+  assert.equal(made.kind, 'customer', `在「客户」页新建的，类型却是 ${made.kind}`)
+  if (made.enabled !== undefined) assert.equal(made.enabled, true, '新建出来就是停用的')
+
+  // 停用之后**仍然看得见**（能改回来），这是与旧下拉的根本区别
+  const off = await bundle.api.api.saveContact({ ...made, enabled: false })
+  assert.equal(off.ok, true, off.fault?.message)
+  const still = (await bundle.api.api.contacts('')).data.find((c) => c.id === made.id)
+  assert.ok(still, '停用之后档案直接消失了 —— 用户再也改不回来')
+  assert.equal(still.enabled, false, '停用没生效')
+
+  // 没被引用，应当删得掉
+  const del = await bundle.api.api.deleteContact(made.id)
+  assert.equal(del.ok, true, `没人用的客户应当能删掉：${del.fault?.message}`)
+  const final = await bundle.api.api.contacts('')
+  assert.ok(!(final.data ?? []).some((c) => c.id === made.id), '删完还在列表里')
 })
 
 test('★ 有人的部门删不掉，而且要说清楚被什么挡住了', async () => {

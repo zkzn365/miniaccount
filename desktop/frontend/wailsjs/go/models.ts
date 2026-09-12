@@ -3072,6 +3072,46 @@ export namespace service {
 		    return a;
 		}
 	}
+	export class Contact {
+	    id: number;
+	    code: string;
+	    kind: string;
+	    kindLabel: string;
+	    name: string;
+	    shortName: string;
+	    taxNo: string;
+	    bankName: string;
+	    bankAccount: string;
+	    address: string;
+	    phone: string;
+	    email: string;
+	    contactPerson: string;
+	    enabled: boolean;
+	    remark: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Contact(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.code = source["code"];
+	        this.kind = source["kind"];
+	        this.kindLabel = source["kindLabel"];
+	        this.name = source["name"];
+	        this.shortName = source["shortName"];
+	        this.taxNo = source["taxNo"];
+	        this.bankName = source["bankName"];
+	        this.bankAccount = source["bankAccount"];
+	        this.address = source["address"];
+	        this.phone = source["phone"];
+	        this.email = source["email"];
+	        this.contactPerson = source["contactPerson"];
+	        this.enabled = source["enabled"];
+	        this.remark = source["remark"];
+	    }
+	}
 	export class ContactOption {
 	    id: number;
 	    name: string;
@@ -3090,6 +3130,24 @@ export namespace service {
 	        this.kind = source["kind"];
 	        this.kindLabel = source["kindLabel"];
 	        this.shortName = source["shortName"];
+	    }
+	}
+	export class ContactUsage {
+	    entries: number;
+	    invoices: number;
+	    bankFlows: number;
+	    bankRules: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ContactUsage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.entries = source["entries"];
+	        this.invoices = source["invoices"];
+	        this.bankFlows = source["bankFlows"];
+	        this.bankRules = source["bankRules"];
 	    }
 	}
 	export class CreateBookInput {
@@ -3516,6 +3574,20 @@ export namespace service {
 	        this.voucherNo = source["voucherNo"];
 	        this.posted = source["posted"];
 	        this.attachmentCount = source["attachmentCount"];
+	    }
+	}
+	export class KindOption {
+	    value: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new KindOption(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.label = source["label"];
 	    }
 	}
 	export class LogSettings {

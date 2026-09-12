@@ -292,6 +292,14 @@ export const api = {
   schemeTemplate: (name) => call(A().SchemeTemplate, name),
   saveInsuranceSchemes: (list) => call(A().SaveInsuranceSchemes, list),
   departments: () => call(A().Departments),
+  // 往来单位档案（辅助核算：客户 / 供应商 / 股东 / 其他单位）。
+  // ★ 与 contactOptions 的区别：这个**包含已停用的**，是给管理界面用的；
+  // 那个只列启用中的，是给凭证录入的下拉用的。用同一个的话，
+  // 停用一个客户之后它就彻底消失了，再也改不回来。
+  contacts: (kind) => call(A().Contacts, kind ?? ''),
+  contactKinds: () => call(A().ContactKinds),
+  deleteContact: (id) => call(A().DeleteContact, id),
+  contactUsageOf: (id) => call(A().ContactUsageOf, id),
   saveDepartment: (req) => call(A().SaveDepartment, req),
   deleteDepartment: (id) => call(A().DeleteDepartment, id),
   departmentUsageOf: (id) => call(A().DepartmentUsageOf, id),
@@ -608,6 +616,14 @@ export const mockApp = {
     { id: 1, kind: 'customer', kindLabel: '客户', name: '杭州云帆科技有限公司', shortName: '云帆科技', enabled: true },
   ],
   SaveContact: async () => 1,
+  Contacts: async () => [
+    { id: 1, kind: 'customer', kindLabel: '客户', name: '杭州云帆科技有限公司', shortName: '云帆科技', enabled: true },
+  ],
+  ContactKinds: async () => [
+    { value: 'customer', label: '客户' }, { value: 'supplier', label: '供应商' },
+  ],
+  DeleteContact: async () => null,
+  ContactUsageOf: async () => ({ entries: 0, invoices: 0, bankFlows: 0, bankRules: 0 }),
   Departments: async () => [
     { id: 1, code: '001', name: '管理部门', fullName: '管理部门', enabled: true, parentId: null, remark: '' },
     { id: 2, code: '002', name: '销售部', fullName: '销售部', enabled: true, parentId: null, remark: '' },

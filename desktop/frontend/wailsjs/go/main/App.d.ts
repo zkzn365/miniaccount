@@ -86,9 +86,15 @@ export function Columnar(arg1:main.ColumnarRequest):Promise<service.ColumnarView
 
 export function ColumnarAccounts():Promise<Array<service.AccountOption>>;
 
+export function ContactKinds():Promise<Array<service.KindOption>>;
+
 export function ContactList():Promise<Array<main.ContactDetail>>;
 
 export function ContactOptions():Promise<Array<service.ContactOption>>;
+
+export function ContactUsageOf(arg1:number):Promise<service.ContactUsage>;
+
+export function Contacts(arg1:string):Promise<Array<service.Contact>>;
 
 export function CreateBook(arg1:service.CreateBookInput):Promise<main.BookStatus>;
 
@@ -99,6 +105,8 @@ export function CurrentBook():Promise<main.BookStatus>;
 export function DefaultBookDir():Promise<string>;
 
 export function DeleteAccount(arg1:string):Promise<void>;
+
+export function DeleteContact(arg1:number):Promise<void>;
 
 export function DeleteDepartment(arg1:number):Promise<void>;
 

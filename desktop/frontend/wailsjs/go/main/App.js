@@ -162,12 +162,24 @@ export function ColumnarAccounts() {
   return window['go']['main']['App']['ColumnarAccounts']();
 }
 
+export function ContactKinds() {
+  return window['go']['main']['App']['ContactKinds']();
+}
+
 export function ContactList() {
   return window['go']['main']['App']['ContactList']();
 }
 
 export function ContactOptions() {
   return window['go']['main']['App']['ContactOptions']();
+}
+
+export function ContactUsageOf(arg1) {
+  return window['go']['main']['App']['ContactUsageOf'](arg1);
+}
+
+export function Contacts(arg1) {
+  return window['go']['main']['App']['Contacts'](arg1);
 }
 
 export function CreateBook(arg1) {
@@ -188,6 +200,10 @@ export function DefaultBookDir() {
 
 export function DeleteAccount(arg1) {
   return window['go']['main']['App']['DeleteAccount'](arg1);
+}
+
+export function DeleteContact(arg1) {
+  return window['go']['main']['App']['DeleteContact'](arg1);
 }
 
 export function DeleteDepartment(arg1) {

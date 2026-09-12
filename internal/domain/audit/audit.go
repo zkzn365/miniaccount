@@ -61,9 +61,12 @@ const (
 	ActionPeriodReopen Action = "period.reopen"
 
 	// 基础数据（规范点名要记的：科目表、银行账户、辅助核算项目、人员信息）
-	ActionAccountSave    Action = "account.save"
-	ActionAccountDelete  Action = "account.delete"
-	ActionContactSave    Action = "contact.save"
+	ActionAccountSave   Action = "account.save"
+	ActionAccountDelete Action = "account.delete"
+	ActionContactSave   Action = "contact.save"
+	// 删除单列，理由同部门：日志只剩「维护往来单位」时，
+	// 事后看不出是改了名字还是把它删了。
+	ActionContactDelete  Action = "contact.delete"
 	ActionEmployeeSave   Action = "employee.save"
 	ActionDepartmentSave Action = "department.save"
 	// 部门删除单列一个动作，不并进 Save。
@@ -156,6 +159,7 @@ var actionLabels = map[Action]string{
 	ActionAccountSave:      "维护会计科目",
 	ActionAccountDelete:    "删除会计科目",
 	ActionContactSave:      "维护往来单位",
+	ActionContactDelete:    "删除往来单位",
 	ActionEmployeeSave:     "维护员工档案",
 	ActionDepartmentSave:   "维护部门",
 	ActionDepartmentDelete: "删除部门",

@@ -399,3 +399,64 @@ func (a *App) ContactList() (out []ContactDetail, err error) {
 func fmtLine(i int, field string) string {
 	return fmt.Sprintf("第 %d 行%s", i+1, field)
 }
+
+// ---------------------------------------------------------------------------
+// 往来单位档案（辅助核算：客户 / 供应商 / 股东 / 其他单位）
+// ---------------------------------------------------------------------------
+//
+// ★ 原来只有 ContactOptions：一个给凭证录入用的下拉，**只列启用中的**。
+// 于是用户**新建不了、也改不回来** —— 停用之后它从下拉里消失，
+// 而界面上再没有任何地方能看到它、把它打开或者删掉。
+// 客户与供应商是辅助核算的两个维度，必须和部门、员工一样有档案页。
+
+// Contacts 返回往来单位档案。
+//
+// kind 为空表示全部。**包含已停用的** —— 管理界面要能看到它们，
+// 否则「停用」就变成了「消失」。
+func (a *App) Contacts(kind string) (out []service.Contact, err error) {
+	defer recoverTo(&err, "Contacts")()
+	svc, f := a.book()
+	if f != nil {
+		return nil, f
+	}
+	list, serr := svc.Contacts(a.context(), kind)
+	return wrap(nonNil(list), serr)
+}
+
+// ContactKinds 返回往来单位的类型选项（客户 / 供应商 / …）。
+func (a *App) ContactKinds() (out []service.KindOption) {
+	defer recoverValue("ContactKinds")
+	return nonNil(service.ContactKinds())
+}
+
+// DeleteContact 删除一个往来单位。
+//
+// 被凭证、发票或银行流水引用时会被拒绝，并说明被什么挡住了。
+//
+// contact_id 在库里是**真外键**，所以这层检查不是为了防脏数据 ——
+// 是为了把「SQLite 的外键报错」换成一句人话：
+// 「「杭州某某科技」还在被使用：凭证 3 处。如果只是不再往来了、
+// 历史还要留，请改用「停用」。」界面在用户点确认**之前**
+// 就用 ContactUsageOf 把这句话说出来，连确认框都不用弹。
+func (a *App) DeleteContact(id int64) (err error) {
+	defer recoverTo(&err, "DeleteContact")()
+	svc, f := a.book()
+	if f != nil {
+		return f
+	}
+	_, f2 := wrap(struct{}{}, svc.DeleteContact(a.context(), id))
+	return f2
+}
+
+// ContactUsageOf 统计一个往来单位被引用的次数。
+//
+// 界面在**点删除之前**就用它把话说明白（「这个客户还有 3 张凭证」），
+// 而不是让用户点完再看报错。
+func (a *App) ContactUsageOf(id int64) (out service.ContactUsage, err error) {
+	defer recoverTo(&err, "ContactUsageOf")()
+	svc, f := a.book()
+	if f != nil {
+		return out, f
+	}
+	return wrap(svc.ContactUsageOf(a.context(), id))
+}
