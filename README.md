@@ -452,33 +452,15 @@ miniaccount version      # 版本号 + 构建时间
 
 ### 发布：三个平台一起出包
 
-不用在三种机器上各编一遍 —— 推分支或标签，GitHub Actions 全包了
-（见 `.github/workflows/release.yml`）。两种用法：
-
-**① 想要一套能下载的最新包 → 推 `publish` 分支**
+不用在三种机器上各编一遍 —— 推一个标签，GitHub Actions 全包了
+（见 `.github/workflows/release.yml`）：
 
 ```sh
-git push origin main:publish      # 或者 git checkout publish && git merge main && git push
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-出来的是一个**滚动**的 pre-release，标签固定是 `publish-latest`：
-每次推都重新编译一套三个平台的包，**覆盖同名的旧产物**。
-下载链接永远指向最新一次构建，测试的人只需要收藏一个链接，
-不用在 Releases 列表里翻。
-
-版本号形如 `0.2.0-publish.7`（7 = 本次 workflow 运行号），
-Release 标题里带提交短号与日期；装上之后 `miniaccount version`
-打出来的就是同一个号，出问题时能对回是哪一次构建。
-
-**② 要发正式版 → 推 `v*` 标签**
-
-```sh
-git tag v0.2.0 && git push origin v0.2.0
-```
-
-出来的是一个正常的 Release（不是 pre-release，会拿到「Latest」标记）。
-
-两种方式产出的包一样：
+跑完之后 Release 页面上有三个压缩包：
 
 | 平台 | 文件 | 里面是什么 |
 | --- | --- | --- |
@@ -491,17 +473,17 @@ git tag v0.2.0 && git push origin v0.2.0
 `CFBundleShortVersionString` 和 Windows 的 exe 版本信息）。
 
 推 `main` 或提 PR 时**只跑测试、不做三平台构建** —— macOS runner 是
-10 倍费率，每次推代码都全量编一遍账单会很难看。想验证三平台就推
-`publish`，或者在 Actions 页面点 Run workflow。
+10 倍费率，每次推代码都全量编一遍账单会很难看。想验证三平台又不想
+占版本号，去 Actions 页面点 Run workflow：它会发一个带日期的
+`dev-<日期>-<构建号>` Release，不会覆盖正式版本。
 
 两个已知的坑写在 workflow 注释里：
 
 - Linux 用的是 WebKitGTK **4.1**（Ubuntu 24.04 起没有 4.0 了），
   在较老的发行版上可能报 GLIBC 版本不够 —— 包内说明里写了这种情况
   改用命令行版（纯 Go、无依赖）；
-- 滚动 Release 每次**先删旧产物再传新的**。只靠 `--clobber` 不行：
-  文件名里带版本号，而 publish 的版本号每次都不同，旧文件会一直留着，
-  下载页很快就堆满过期的包。
+- macOS 的 `.app` 必须用 `ditto` 打包，不能用 `zip -r`：后者会丢掉
+  包内的符号链接与权限位，解压出来打不开。
 
 ## 备份与恢复
 
