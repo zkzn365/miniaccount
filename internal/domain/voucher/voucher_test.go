@@ -460,25 +460,75 @@ func TestBuildReversalIntoAnotherPeriod(t *testing.T) {
 // ---------------------------------------------------------------------------
 // 凭证字号连续性检查
 // ---------------------------------------------------------------------------
+//
+// 注意：断号检查只看**已过账**的凭证 —— 草稿不占号（Seq=0），
+// 把它算进来会让每一个有录入的期间都报一条假警告。
+
+// numbered 造一张**已过账**的凭证，带指定的序号。
+func numbered(t *testing.T, w Word, date calendar.Date, seq int) *Voucher {
+	t.Helper()
+	v, err := New(w, date, "张三")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.Status = StatusPosted
+	v.Seq, v.No = seq, FormatNo(w, v.Period, seq)
+	return v
+}
 
 func TestCheckSequenceOK(t *testing.T) {
 	var vs []*Voucher
 	for i := 1; i <= 5; i++ {
-		v, _ := New(WordJi, d0911, "张三")
-		v.Seq, v.No = i, FormatNo(WordJi, v.Period, i)
-		vs = append(vs, v)
+		vs = append(vs, numbered(t, WordJi, d0911, i))
 	}
 	if issues := CheckSequence(vs); len(issues) != 0 {
 		t.Errorf("连续编号不应有问题，得到 %v", issues)
 	}
 }
 
+// ★ 草稿不占号，不能算进断号检查。
+//
+// 这条不是理论问题：凭证现在一律先落草稿、到账期结算才过账，
+// 于是每一个录过凭证的期间都会带着若干张 Seq=0 的草稿进来 ——
+// 不跳过它们，每期结账都会报「应从 1 开始，实际从 0 开始」。
+// 天天报的假警告等于没有警告。
+func TestCheckSequenceIgnoresDrafts(t *testing.T) {
+	vs := []*Voucher{numbered(t, WordJi, d0911, 1), numbered(t, WordJi, d0911, 2)}
+	// 再挂两张草稿（Seq 全是 0）
+	for i := 0; i < 2; i++ {
+		d, err := New(WordJi, d0911, "李会计")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Status != StatusDraft {
+			t.Fatalf("新凭证应当是草稿，实际 %s", d.Status)
+		}
+		if d.Seq != 0 {
+			t.Fatalf("草稿不该占号，实际 Seq=%d", d.Seq)
+		}
+		vs = append(vs, d)
+	}
+	if issues := CheckSequence(vs); len(issues) != 0 {
+		t.Errorf("★ 草稿不该被算进断号检查，却报了 %v", issues)
+	}
+}
+
+// 只有草稿、一张都没过账时，不该报断号（这一期还没开始编号）
+func TestCheckSequenceAllDraftsIsFine(t *testing.T) {
+	var vs []*Voucher
+	for i := 0; i < 3; i++ {
+		d, _ := New(WordJi, d0911, "李会计")
+		vs = append(vs, d)
+	}
+	if issues := CheckSequence(vs); len(issues) != 0 {
+		t.Errorf("全是草稿时不该报断号，得到 %v", issues)
+	}
+}
+
 func TestCheckSequenceGap(t *testing.T) {
 	var vs []*Voucher
 	for _, i := range []int{1, 2, 4, 5} { // 缺 3
-		v, _ := New(WordJi, d0911, "张三")
-		v.Seq = i
-		vs = append(vs, v)
+		vs = append(vs, numbered(t, WordJi, d0911, i))
 	}
 	issues := CheckSequence(vs)
 	if len(issues) != 1 {
@@ -492,9 +542,7 @@ func TestCheckSequenceGap(t *testing.T) {
 func TestCheckSequenceDuplicate(t *testing.T) {
 	var vs []*Voucher
 	for _, i := range []int{1, 2, 2, 3} { // 3 重复
-		v, _ := New(WordJi, d0911, "张三")
-		v.Seq = i
-		vs = append(vs, v)
+		vs = append(vs, numbered(t, WordJi, d0911, i))
 	}
 	issues := CheckSequence(vs)
 	var dup int
@@ -509,9 +557,7 @@ func TestCheckSequenceDuplicate(t *testing.T) {
 }
 
 func TestCheckSequenceMustStartAtOne(t *testing.T) {
-	v, _ := New(WordJi, d0911, "张三")
-	v.Seq = 3
-	issues := CheckSequence([]*Voucher{v})
+	issues := CheckSequence([]*Voucher{numbered(t, WordJi, d0911, 3)})
 	if len(issues) != 1 || !strings.Contains(issues[0].Detail, "从 1 开始") {
 		t.Errorf("应从 1 开始，得到 %v", issues)
 	}
@@ -520,9 +566,7 @@ func TestCheckSequenceMustStartAtOne(t *testing.T) {
 // 不同期间 / 不同凭证字分别编号，互不影响
 func TestCheckSequenceSeparatesGroups(t *testing.T) {
 	mk := func(w Word, date calendar.Date, seq int) *Voucher {
-		v, _ := New(w, date, "张三")
-		v.Seq = seq
-		return v
+		return numbered(t, w, date, seq)
 	}
 	vs := []*Voucher{
 		mk(WordJi, d0911, 1),

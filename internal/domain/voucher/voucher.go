@@ -546,7 +546,18 @@ func CheckSequence(vs []*Voucher) []SequenceIssue {
 	}
 	groups := map[key][]int{}
 	for _, v := range vs {
-		// 作废凭证仍占用号位，因此也计入
+		// ★ 草稿要跳过：草稿**不占号**，Seq 是 0。
+		//
+		// 不跳过的后果不是「偶尔误报」—— 本工程里凭证录完只落草稿、
+		// 到账期结算才统一过账，所以任何一个有录入的期间都会带着
+		// 若干张 Seq=0 的草稿进来，于是每一期结账都会撞上
+		// 「应从 1 开始，实际从 0 开始」这条**假**警告。
+		// 天天报的假警告等于没有警告。
+		//
+		// 作废凭证则仍然计入：它确实占着号位。
+		if v.Status == StatusDraft {
+			continue
+		}
 		k := key{v.Period, v.Word}
 		groups[k] = append(groups[k], v.Seq)
 	}

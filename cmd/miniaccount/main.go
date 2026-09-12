@@ -841,6 +841,18 @@ func cmdClose(ctx context.Context, args []string) error {
 		}
 		fmt.Printf("  %s %s：%s\n", mark, st.Title, st.Detail)
 	}
+	// ★ 结账会先把本期草稿全部过账 —— 这是账套里唯一的过账时机。
+	// 不提前说，用户点完结账才发现账上凭空多了一批凭证。
+	if pv.DraftCount > 0 {
+		fmt.Printf("\n本期有 %d 张草稿凭证，结账时会先全部过账（自动分配凭证号）：\n",
+			pv.DraftCount)
+		for _, d := range pv.DraftSamples {
+			fmt.Printf("  · %s\n", d)
+		}
+		if pv.DraftCount > len(pv.DraftSamples) {
+			fmt.Printf("  · …等共 %d 张\n", pv.DraftCount)
+		}
+	}
 	if len(pv.Entries) > 0 {
 		fmt.Printf("\n将写入的结转分录：\n")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

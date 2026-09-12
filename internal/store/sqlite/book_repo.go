@@ -486,6 +486,10 @@ func (db *DB) CheckPeriodHealth(ctx context.Context, k period.Key) (*PeriodHealt
 	}
 
 	// 3. 凭证字号连续性
+	//
+	// ListByPeriod 会把草稿也带回来，但 CheckSequence 会跳过它们
+	// （草稿不占号、Seq=0）。不跳的话，任何一个录过凭证的期间
+	// 都会报「应从 1 开始，实际从 0 开始」—— 而凭证现在录完就是草稿。
 	vs, err := db.Vouchers().ListByPeriod(ctx, k)
 	if err != nil {
 		return nil, err
