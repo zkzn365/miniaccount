@@ -2,35 +2,41 @@
 #
 # # 什么时候跑
 #
-#   - 推 v* 标签（`git tag v0.2.0 && git push origin v0.2.0`）→ 测试 + 三平台构建 + 发 Release
-#   - 手动触发（Actions 页面点 Run workflow）→ 同上，版本号自己填
+#   - 推 **publish 分支** → 测试 + 三平台构建，更新「发布分支构建」那个
+#     pre-release（本轮的重点：分支一动就出一套新包）
+#   - 推 v* 标签（`git tag v0.2.0 && git push origin v0.2.0`）
+#     → 测试 + 三平台构建 + 发一个正式 Release
+#   - 手动触发（Actions 页面点 Run workflow）→ 同上
 #   - 推 main / 提 PR → **只跑测试**，不做三平台构建
 #
-# 最后一条是有意的：这个仓库是私有的，Actions 按分钟计费，
-# 而 macOS runner 是 10 倍费率、Windows 是 2 倍。
+# 最后一条是有意的：三平台构建里 macOS runner 是 10 倍费率。
 # 每次推代码都把三个平台的 GUI 全编一遍，账单会很难看。
+# 仓库转公开之后 Actions 不再计费，但也没必要每次推都编 ——
+# 想验证三平台，推 publish 就行。
 #
-# # 为什么要先构建前端再跑 Go
+# # publish 分支的产物放在哪
 #
-# `desktop/main.go` 里有 `//go:embed all:frontend/dist` ——
-# 这个目录在**编译时**必须存在，否则连 `go build ./...` 都过不去。
-# 干净检出时里面只有一个 .gitkeep（见 .gitignore 的说明），
-# 所以顺序必须是：npm 装依赖 → npm run build → 再 go test / wails build。
+# 一个**滚动**的 pre-release，标签固定是 `publish-latest`：
+# 每次推 publish 都覆盖同名产物，下载链接永远指向最新一次构建。
+# 这样测试的人只需要收藏一个链接，不用在 Releases 列表里翻。
 #
-# 反过来，先 go test 会得到一堆「embed 里一个 .js 都没有」的失败 ——
-# 那不是代码坏了，是没人先建前端。
+# 版本号形如 `0.2.0-publish.7`（7 = 本次 workflow 第 7 次运行），
+# 标题里带提交短号与日期 —— 界面上「关于」和 `miniaccount version`
+# 打出来的就是这个号，出问题时能对回是哪一次构建。
+#
+# 标成 pre-release 是为了不让它抢走正式版本的「Latest」标记。
 
 name: 构建与发布
 
 on:
   push:
-    branches: [main]
+    branches: [main, publish]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号（例如 0.2.0；留空则用 0.0.0-dev.<日期>）'
+        description: '版本号（例如 0.2.0；留空则按分支自动算）'
         required: false
         default: ''
 
@@ -49,6 +55,8 @@ env:
   # github.com/wailsapp/wails/v2 主次版本一致，否则生成的绑定对不上。
   WAILS_VERSION: v2.10.2
   NODE_VERSION: '22'
+  # publish 分支那个滚动 Release 的标签。
+  PUBLISH_TAG: publish-latest
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -111,11 +119,14 @@ jobs:
         run: go test -tags "${{ steps.webkit.outputs.tags }}" -count=1 -timeout 300s ./...
 
   # ---------------------------------------------------------------------------
-  # 三平台构建（只在打标签或手动触发时跑）
+  # 三平台构建（推 publish、打标签、手动触发时跑）
   # ---------------------------------------------------------------------------
   build:
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.ref == 'refs/heads/publish' ||
+      github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -133,6 +144,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 要取全量历史与标签：算 publish 分支的版本号时要用
+          # `git describe --tags` 找最近的正式版本当基线。
+          # 默认的浅克隆（depth=1）**不带标签**，会静默退到 0.0.0。
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
@@ -171,16 +187,34 @@ jobs:
         id: ver
         shell: bash
         run: |
+          set -e
+          short="$(git rev-parse --short "$GITHUB_SHA")"
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             v="${{ github.event.inputs.version }}"
             [ -n "$v" ] || v="0.0.0-dev.$(date -u +%Y%m%d)"
-          else
+
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             # v0.2.0 → 0.2.0
             v="${GITHUB_REF_NAME#v}"
+
+          else
+            # publish 分支：本次构建是一个**新版本**，号要能区分先后。
+            #
+            # 基线取最近的一个 v* 标签；还没有任何标签时就退回源码里的
+            # AppVersion（它至少是个真实存在过的版本号，比 0.0.0 有用）。
+            base="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//' || true)"
+            if [ -z "$base" ]; then
+              base="$(sed -n 's/^var AppVersion = "\(.*\)"$/\1/p' internal/service/service.go | head -1)"
+            fi
+            [ -n "$base" ] || base="0.0.0"
+            v="${base}-publish.${GITHUB_RUN_NUMBER}"
           fi
+
           echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "short=$short" >> "$GITHUB_OUTPUT"
           echo "stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-          echo "本次版本号：$v"
+          echo "本次版本号：$v（提交 $short）"
 
       # wails.json 里的 productVersion 决定 macOS .app 的
       # CFBundleShortVersionString（「关于本机」「显示简介」里看到的版本）。
@@ -308,7 +342,10 @@ jobs:
   # ---------------------------------------------------------------------------
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.ref == 'refs/heads/publish' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -326,48 +363,86 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${GITHUB_REF_NAME}"
-          # 手动触发时没有标签，用一个带日期的标签，免得覆盖掉正式版本。
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            tag="dev-$(date -u +%Y%m%d-%H%M%S)"
-          fi
+          set -e
+          short="$(git rev-parse --short "$GITHUB_SHA")"
+          today="$(date -u +%Y-%m-%d)"
 
-          cat > notes.md <<'EOF'
+          # 三种情形落到三个不同的标签上，互不覆盖：
+          #   推标签      → 用标签本身，正式 Release
+          #   推 publish  → 固定的滚动标签，pre-release，每次覆盖同名产物
+          #   手动触发    → 带日期的标签，免得覆盖正式版本
+          rolling=""
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"; title="小账本 $tag"
+          elif [ "${GITHUB_REF_NAME}" = "publish" ]; then
+            tag="${PUBLISH_TAG}"; rolling=1
+            title="发布分支构建 #${GITHUB_RUN_NUMBER}（${short}，${today}）"
+          else
+            tag="dev-${today}-${GITHUB_RUN_NUMBER}"
+            title="手动构建 ${tag}（${short}）"
+          fi
+          echo "本次发到标签：$tag"
+
+          cat > notes.md <<EOF
           ## 下载哪个
 
           | 你的系统 | 下载 |
           | --- | --- |
-          | macOS（Apple 芯片 / Intel 都行） | `miniaccount-*-macos-universal.zip` |
-          | Windows 10 / 11（64 位） | `miniaccount-*-windows-amd64.zip` |
-          | Linux（64 位） | `miniaccount-*-linux-amd64.tar.gz` |
+          | macOS（Apple 芯片 / Intel 都行） | \`miniaccount-*-macos-universal.zip\` |
+          | Windows 10 / 11（64 位） | \`miniaccount-*-windows-amd64.zip\` |
+          | Linux（64 位） | \`miniaccount-*-linux-amd64.tar.gz\` |
 
-          每个压缩包里有两样东西：**界面版**（`小账本`）和**命令行版**（`miniaccount`）。
+          每个压缩包里有两样东西：**界面版**（\`小账本\`）和**命令行版**（\`miniaccount\`）。
           命令行版是纯 Go、无依赖，界面版跑不起来时可以用它。
+
+          ## 这一批是哪个提交
+
+          | | |
+          | --- | --- |
+          | 提交 | \`${short}\` |
+          | 构建号 | #${GITHUB_RUN_NUMBER} |
+          | 时间 | ${today} |
+
+          装上之后用 \`miniaccount version\` 可以打出同样的版本号与构建时间 ——
+          出问题时把那一行贴回来，就能对上是哪一次构建。
 
           ## 第一次打开
 
           - **macOS**：应用没有做代码签名（没有 Apple 开发者账号），
             双击会被 Gatekeeper 拦住。右键点它 → 选「打开」→ 再点「打开」，
             之后就能正常双击了。或者执行
-            `xattr -dr com.apple.quarantine 小账本.app`。
+            \`xattr -dr com.apple.quarantine 小账本.app\`。
           - **Windows**：SmartScreen 会提示「Windows 已保护你的电脑」，
             点「更多信息」→「仍要运行」。
-          - **Linux**：`chmod +x 小账本` 之后运行；需要 GTK3 与 WebKitGTK（见包内说明）。
+          - **Linux**：\`chmod +x 小账本\` 之后运行；需要 GTK3 与 WebKitGTK（见包内说明）。
 
           ## 账套存在哪
 
-          `<你的家目录>/.mini-account/dataDB/`。这是一个隐藏目录，
+          \`<你的家目录>/.mini-account/dataDB/\`。这是一个隐藏目录，
           界面上的「打开目录」按钮可以直接在文件管理器里定位过去。
-          备份时把整个 `dataDB` 目录拷走即可。
-
-          > 这是自动构建的产物。提交号与构建时间可以用 `miniaccount version` 查看。
+          备份时把整个 \`dataDB\` 目录拷走即可。
           EOF
 
+          assets=(dist/*.zip dist/*.tar.gz)
+
           if gh release view "$tag" >/dev/null 2>&1; then
-            # 重跑同一次发布：覆盖同名产物，不要报错退出。
-            gh release upload "$tag" dist/*.zip dist/*.tar.gz --clobber
+            # 已经发过：覆盖同名产物，别报错退出（重跑同一次 CI 时会发生）。
+            #
+            # ★ 必须先删再传，不能只靠 --clobber：
+            # 每次构建的产物文件名里都带版本号，而 publish 分支的版本号
+            # 每次都不同（-publish.7、-publish.8…）。只 clobber 的话，
+            # 同名文件被覆盖，**旧版本号的文件会一直留着** ——
+            # 下载页上很快就堆满十几个过期的包，谁也不知道该下哪个。
+            for old in $(gh release view "$tag" --json assets --jq '.assets[].name'); do
+              gh release delete-asset "$tag" "$old" --yes || true
+            done
+            gh release upload "$tag" "${assets[@]}"
+            gh release edit "$tag" --title "$title" --notes-file notes.md
+          elif [ -n "$rolling" ]; then
+            gh release create "$tag" "${assets[@]}" \
+              --title "$title" --notes-file notes.md \
+              --prerelease --target "$GITHUB_SHA"
           else
-            gh release create "$tag" dist/*.zip dist/*.tar.gz \
-              --title "小账本 $tag" \
-              --notes-file notes.md
+            gh release create "$tag" "${assets[@]}" \
+              --title "$title" --notes-file notes.md
           fi

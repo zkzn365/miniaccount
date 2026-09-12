@@ -95,7 +95,8 @@ go-licenses check ./... \
 | 明细科目设计 | 依据上述准则 + 营改增后实务口径（财会〔2016〕22号）自行整理 | — |
 | 人民币大写规则 | 中国人民银行《正确填写票据和结算凭证的基本规定》 | 同上 |
 
-原始依据文件与提取方法见 [`docs/reference/README.md`](../docs/reference/README.md)。
+原始依据文件与提取方法见开发时的设计文档《docs/reference/README.md》
+（不在本仓库内）。
 
 ---
 

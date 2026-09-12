@@ -2,8 +2,11 @@
 
 面向中国小微企业的本地记账软件。**Go + Wails v2 + SQLite + Vue 3 / shadcn-vue**。
 
-> 本工程为**独立实现**，不含任何来自 Frappe Books 的代码。见 [`PROVENANCE.md`](./PROVENANCE.md)。
-> 设计与需求见 [`../docs/`](../docs/)。
+> 独立实现，不含任何来自 Frappe Books 的代码 —— 见 [`PROVENANCE.md`](./PROVENANCE.md)。
+> 以 [MIT 许可](./LICENSE)发布。
+>
+> 下文引用的「设计文档」指开发时的需求与设计笔记，**不在本仓库内**，
+> 因此按《文档名》§小节 的形式引用，不做成链接。
 
 ---
 
@@ -303,7 +306,7 @@ if err := cal.Close(period.Key{Year: 2025, Month: 9}, "张三", time.Now()); err
 
 ## 后续计划
 
-见 [`../docs/02-Go重写方案.md`](../docs/02-Go重写方案.md) §12 路线图。
+见 《02-Go重写方案》 §12 路线图。
 
 - **P2**（已完成）：凭证聚合根、SQLite 建表与迁移、过账事务、红字冲销
 - **P3**（已完成）：报表引擎、Excel 导出、结账体检、`.mabak` 备份恢复
@@ -383,7 +386,7 @@ cd desktop/frontend && npm run test:gui
 
 ★ 这几套测试是有来历的：界面曾经**一次都没真正跑起来过**，而 886 个
 Go 测试全绿 —— 因为没人测「Vue 组件 ↔ api.js ↔ Wails 调用约定 ↔ Go 绑定」
-这条接缝。详见 [`../docs/02-Go重写方案.md`](../docs/02-Go重写方案.md) §37。
+这条接缝。详见 《02-Go重写方案》 §37。
 
 ★★ `frontend_assets_test.go` 是**另一条接缝**换来的：用户报回来四条界面 bug，
 源码里四条都改好了、`go test ./...` 全绿、界面冒烟测试也全过 ——
@@ -424,7 +427,7 @@ miniaccount log --export 日志.csv     # 导出给审计（Excel 直接打开�
 界面上有「操作日志」页，同样支持按操作人/时间/操作种类/结果/关键字组合查询。
 
 ★ 设计与依据（财政部《企业会计信息化工作规范》的完整性/安全性/可查询性三条）
-见 [`../docs/02-Go重写方案.md`](../docs/02-Go重写方案.md) §40。
+见 《02-Go重写方案》 §40。
 
 ## 构建与版本
 
@@ -449,15 +452,33 @@ miniaccount version      # 版本号 + 构建时间
 
 ### 发布：三个平台一起出包
 
-不用在三种机器上各编一遍 —— 推一个标签，GitHub Actions 全包了
-（见 `.github/workflows/release.yml`）：
+不用在三种机器上各编一遍 —— 推分支或标签，GitHub Actions 全包了
+（见 `.github/workflows/release.yml`）。两种用法：
+
+**① 想要一套能下载的最新包 → 推 `publish` 分支**
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+git push origin main:publish      # 或者 git checkout publish && git merge main && git push
 ```
 
-跑完之后 Release 页面上会有三个压缩包：
+出来的是一个**滚动**的 pre-release，标签固定是 `publish-latest`：
+每次推都重新编译一套三个平台的包，**覆盖同名的旧产物**。
+下载链接永远指向最新一次构建，测试的人只需要收藏一个链接，
+不用在 Releases 列表里翻。
+
+版本号形如 `0.2.0-publish.7`（7 = 本次 workflow 运行号），
+Release 标题里带提交短号与日期；装上之后 `miniaccount version`
+打出来的就是同一个号，出问题时能对回是哪一次构建。
+
+**② 要发正式版 → 推 `v*` 标签**
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+出来的是一个正常的 Release（不是 pre-release，会拿到「Latest」标记）。
+
+两种方式产出的包一样：
 
 | 平台 | 文件 | 里面是什么 |
 | --- | --- | --- |
@@ -469,14 +490,18 @@ git push origin v0.2.0
 与 `wails.json` 的 `productVersion`（后者决定 macOS 的
 `CFBundleShortVersionString` 和 Windows 的 exe 版本信息）。
 
-推 `main` 或提 PR 时**只跑测试、不做三平台构建** —— 这个仓库是私有的，
-Actions 按分钟计费，macOS runner 是 10 倍费率，每次推代码都全量编一遍
-账单会很难看。想立刻验证三个平台，去 Actions 页面点 Run workflow。
+推 `main` 或提 PR 时**只跑测试、不做三平台构建** —— macOS runner 是
+10 倍费率，每次推代码都全量编一遍账单会很难看。想验证三平台就推
+`publish`，或者在 Actions 页面点 Run workflow。
 
-两个已知的坑写在 workflow 注释里：Linux 用的是 WebKitGTK **4.1**
-（Ubuntu 24.04 起没有 4.0 了，靠 `webkit2_41` 构建标记切换），
-所以那个包在较老的发行版上可能报 GLIBC 版本不够 —— 包内说明里
-写了这种情况改用命令行版（纯 Go、无依赖）。
+两个已知的坑写在 workflow 注释里：
+
+- Linux 用的是 WebKitGTK **4.1**（Ubuntu 24.04 起没有 4.0 了），
+  在较老的发行版上可能报 GLIBC 版本不够 —— 包内说明里写了这种情况
+  改用命令行版（纯 Go、无依赖）；
+- 滚动 Release 每次**先删旧产物再传新的**。只靠 `--clobber` 不行：
+  文件名里带版本号，而 publish 的版本号每次都不同，旧文件会一直留着，
+  下载页很快就堆满过期的包。
 
 ## 备份与恢复
 
@@ -491,7 +516,7 @@ miniaccount restore --from book.mabak --db book.db  # 恢复
 
 ## 第一版边界（用之前请先看这几条）
 
-详见 [`../docs/02-Go重写方案.md`](../docs/02-Go重写方案.md) §32。
+详见 《02-Go重写方案》 §32。
 
 1. **工资模块必须先配社保方案** —— 本工程刻意不预置任何费率
    （预置一组看着像真的数字会被直接当真使用，而算错了不会报错）。
@@ -512,6 +537,6 @@ miniaccount restore --from book.mabak --db book.db  # 恢复
    但**出口发票、退免税申报表不在首版范围**。
    零税率只适用于采用一般计税的一般纳税人，**不放宽给小规模纳税人**。
 
-对照 `../docs/02-Go重写方案.md` §6.3 的 27 张报表清单，**已全部实现**；
+对照《02-Go重写方案》§6.3 的 27 张报表清单，**已全部实现**；
 §28 列的三个小缺口已在 §29 收掉（日记账「对方科目」、
 银行流水行内改科目、附件上传流程的绑定级验证）。
