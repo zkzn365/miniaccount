@@ -452,11 +452,25 @@ miniaccount version      # 版本号 + 构建时间
 
 ### 发布：三个平台一起出包
 
-不用在三种机器上各编一遍 —— 推一个标签，GitHub Actions 全包了
-（见 `.github/workflows/release.yml`）：
+**标签就是版本号的唯一来源。** 不用改任何代码 —— CI 拿到标签之后，
+会把版本号同时注入 `service.AppVersion`（`miniaccount version`、
+备份清单、操作日志读它）和 `wails.json` 的 `productVersion`
+（macOS 的 `CFBundleShortVersionString`、Windows exe 的版本信息）。
+
+一条命令发版：
 
 ```sh
-git tag v0.2.0
+./release.sh 0.2.0        # 正式版，会拿到 Releases 页面的 Latest 标记
+./release.sh 0.2.0-rc1    # 预发布，标 pre-release，不抢 Latest
+```
+
+它做的事：检查版本号形状 → 工作区干净 → 在 main 上且与远端一致 →
+标签没被用过 → 确认后打**附注标签**并推送。推上去就触发 CI。
+
+想跳过脚本手动来也行，效果一样：
+
+```sh
+git tag -a v0.2.0 -m "小账本 0.2.0"
 git push origin v0.2.0
 ```
 
@@ -468,22 +482,34 @@ git push origin v0.2.0
 | Windows 10/11 64 位 | `miniaccount-<版本>-windows-amd64.zip` | `小账本.exe` + `miniaccount.exe` |
 | Linux 64 位 | `miniaccount-<版本>-linux-amd64.tar.gz` | `小账本` + `miniaccount` + 说明 |
 
-版本号取自标签（`v0.2.0` → `0.2.0`），同时注入 `service.AppVersion`
-与 `wails.json` 的 `productVersion`（后者决定 macOS 的
-`CFBundleShortVersionString` 和 Windows 的 exe 版本信息）。
+#### 标签规则
 
-推 `main` 或提 PR 时**只跑测试、不做三平台构建** —— macOS runner 是
-10 倍费率，每次推代码都全量编一遍账单会很难看。想验证三平台又不想
-占版本号，去 Actions 页面点 Run workflow：它会发一个带日期的
-`dev-<日期>-<构建号>` Release，不会覆盖正式版本。
+- 一律 `v` 开头：`v0.2.0`。CI 去掉 `v` 当版本号，产物文件名里用的是去掉之后的。
+- **带连字符就是预发布**：`v0.2.0-rc1`、`v1.0.0-beta.2`。
+  CI 会显式标成 pre-release —— 不这样的话它会被当成正式版，
+  还会顶掉 Releases 页面的「Latest」，来下载的人第一眼看到个 rc 却以为稳定。
+- 版本号一次只前进，**推上去就不再动**。要重发同一个版本，先删标签再重打；
+  代码没变只是想重跑 CI 的话不用删标签，去 Actions 点 Re-run failed jobs 就行。
 
-两个已知的坑写在 workflow 注释里：
+#### 几个容易踩的地方
 
-- Linux 用的是 WebKitGTK **4.1**（Ubuntu 24.04 起没有 4.0 了），
-  在较老的发行版上可能报 GLIBC 版本不够 —— 包内说明里写了这种情况
-  改用命令行版（纯 Go、无依赖）；
-- macOS 的 `.app` 必须用 `ditto` 打包，不能用 `zip -r`：后者会丢掉
-  包内的符号链接与权限位，解压出来打不开。
+- **别用 `git push --follow-tags`** 顺手推标签 —— 那会把本地攒的所有标签
+  一起推上去，每个都触发一次三平台构建。
+- **发版前先 `git push origin main`**。标签指向本地提交，而 CI 是按标签拉代码的；
+  本地领先远端时，标签会指向一个远端还不存在的提交，构建直接失败。
+  `release.sh` 会挡住这种情况。
+- **本地构建的版本号**：`./build.sh` 不传参数时沿用 `service.AppVersion`
+  （仓库里是 `0.2.0-rc2`，也就是「下一个版本的开发号」）。正式发布时 CI 用
+  标签号覆盖它。所以看到 `-rc2` / `-dev` 结尾的就是本地构建，不是发布版。
+- 想验证三平台编不编得过又不想占版本号，去 Actions 页面点 Run workflow：
+  它发一个带日期的 `dev-<日期>-<构建号>` Release，不会碰正式版本。
+
+#### 两个已知的平台坑
+
+- Linux 用 WebKitGTK **4.1**（Ubuntu 24.04 起没有 4.0 了）。在较老的发行版上
+  可能报 GLIBC 版本不够 —— 包内说明里写了这种情况改用命令行版（纯 Go、无依赖）。
+- macOS 的 `.app` 必须用 `ditto` 打包，不能用 `zip -r`：后者会丢掉包内的
+  符号链接与权限位，解压出来打不开。
 
 ## 备份与恢复
 

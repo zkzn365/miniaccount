@@ -337,7 +337,7 @@ jobs:
           today="$(date -u +%Y-%m-%d)"
 
           # 只有两种情形：
-          #   推标签    → 用标签本身，正式 Release，标签指向这次提交
+          #   推标签    → 用标签本身，标签指向这次提交
           #   手动触发  → 没有标签可用，用带日期的独立标签，免得覆盖正式版本
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             tag="${GITHUB_REF_NAME}"; title="小账本 $tag"
@@ -345,7 +345,21 @@ jobs:
             tag="dev-${today}-${GITHUB_RUN_NUMBER}"
             title="手动构建 ${tag}（${short}）"
           fi
-          echo "本次发到标签：$tag"
+
+          # ★ 预发布要**显式**标出来，不能指望 GitHub 自己认。
+          #
+          # 按 semver，带连字符的就是预发布：v0.2.0-rc1、v1.0.0-beta.2。
+          # 不显式标的话它会被当成正式版，**还会顶掉 Releases 页面上的
+          # 「Latest」标记** —— 于是来下载的人第一眼看到的是个 rc，
+          # 却以为那是稳定版。
+          #
+          # GitHub 的自动识别不可靠（-rc.N 这种后缀就漏），
+          # 所以这里自己判，一个字符的规则：标签里有 `-` 就是预发布。
+          pre=""
+          case "$tag" in
+            *-*) pre="--prerelease" ;;
+          esac
+          echo "本次发到标签：$tag ${pre:+（预发布）}"
 
           cat > notes.md <<EOF
           ## 下载哪个
@@ -396,8 +410,11 @@ jobs:
             # 这里 `--clobber` 就够了 —— 一个标签对应一个版本号，
             # 产物名里带的就是那个版本号，重跑只会覆盖自己。
             gh release upload "$tag" "${assets[@]}" --clobber
-            gh release edit "$tag" --title "$title" --notes-file notes.md
+            # 顺带把预发布标记也改对：如果第一次是靠 GitHub 的自动识别
+            # 建出来的（可能判错），重跑一次就能纠正过来。
+            gh release edit "$tag" --title "$title" --notes-file notes.md \
+              --prerelease=$([ -n "$pre" ] && echo true || echo false)
           else
             gh release create "$tag" "${assets[@]}" \
-              --title "$title" --notes-file notes.md
+              --title "$title" --notes-file notes.md $pre
           fi

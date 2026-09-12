@@ -17,12 +17,41 @@ cd "$(dirname "$0")"
 . ./env.sh
 
 VERSION="${1:-}"
-if [ -n "$VERSION" ]; then
-  LDFLAGS="-X miniaccount/internal/service.AppVersion=$VERSION"
-fi
-
 STAMP="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+
+# ---------------------------------------------------------------------------
+# ★ 版本号有**两个**落点，少写一个就会出现「同一个软件两个版本号」
+# ---------------------------------------------------------------------------
+#
+#   1. Go 二进制里的 service.AppVersion —— `miniaccount version`、
+#      备份清单、操作日志读的是它，靠 -ldflags 注入；
+#   2. desktop/wails.json 的 info.productVersion —— macOS 的
+#      CFBundleShortVersionString（访达「显示简介」）与 Windows exe
+#      「属性 → 详细信息」读的是它。它是个**静态文件**，没人写就永远
+#      是仓库里那个值。
+#
+# 原来是只做第 1 步，于是本地构建出来的 .app 报 0.1.0、命令行报
+# 0.2.0-rc2 —— 同一个软件两个号，报问题时对不上。
+# CI 那边（.github/workflows/release.yml）一直两步都做，
+# 所以只有本地构建会漂。
+#
+# 不传版本号时沿用 service.AppVersion，本地构建就该是那个号。
+if [ -z "$VERSION" ]; then
+  VERSION="$(sed -n 's/^var AppVersion = "\(.*\)"$/\1/p' internal/service/service.go | head -1)"
+fi
+[ -n "$VERSION" ] || { echo "取不到版本号" >&2; exit 1; }
+
+LDFLAGS="-X miniaccount/internal/service.AppVersion=$VERSION"
 LDFLAGS="$LDFLAGS -X miniaccount/internal/service.BuildStamp=$STAMP"
+
+node -e '
+  const fs = require("fs");
+  const p = "desktop/wails.json";
+  const j = JSON.parse(fs.readFileSync(p, "utf8"));
+  j.info.productVersion = process.argv[1];
+  fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+' "$VERSION"
+echo "==> 版本号 $VERSION（已写入 service.AppVersion 与 wails.json）"
 
 # -s -w 去掉符号表与调试信息：体积从 22M 降到 15M 左右。
 # 代价是 panic 的栈里没有行号 —— 但每个绑定都套了 recoverTo，
