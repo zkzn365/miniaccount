@@ -1,0 +1,9 @@
+这个目录是 `//go:embed all:frontend/dist` 的落点，编译时**必须存在**。
+
+干净检出时里面只有这个文件 —— 前端产物由
+`cd desktop/frontend && npm run build`（或 `wails build`）生成。
+直接 go build / go test 能过，但界面上不会有东西。
+
+这个文件由 vite.config.js 的 keepDistPlaceholder 插件在每次
+构建后写回：emptyOutDir 会把它删掉，不写回的话 git status
+永远是脏的。

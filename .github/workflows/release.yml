@@ -1,0 +1,373 @@
+# 构建与发布：三平台产物 + GitHub Release。
+#
+# # 什么时候跑
+#
+#   - 推 v* 标签（`git tag v0.2.0 && git push origin v0.2.0`）→ 测试 + 三平台构建 + 发 Release
+#   - 手动触发（Actions 页面点 Run workflow）→ 同上，版本号自己填
+#   - 推 main / 提 PR → **只跑测试**，不做三平台构建
+#
+# 最后一条是有意的：这个仓库是私有的，Actions 按分钟计费，
+# 而 macOS runner 是 10 倍费率、Windows 是 2 倍。
+# 每次推代码都把三个平台的 GUI 全编一遍，账单会很难看。
+#
+# # 为什么要先构建前端再跑 Go
+#
+# `desktop/main.go` 里有 `//go:embed all:frontend/dist` ——
+# 这个目录在**编译时**必须存在，否则连 `go build ./...` 都过不去。
+# 干净检出时里面只有一个 .gitkeep（见 .gitignore 的说明），
+# 所以顺序必须是：npm 装依赖 → npm run build → 再 go test / wails build。
+#
+# 反过来，先 go test 会得到一堆「embed 里一个 .js 都没有」的失败 ——
+# 那不是代码坏了，是没人先建前端。
+
+name: 构建与发布
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（例如 0.2.0；留空则用 0.0.0-dev.<日期>）'
+        required: false
+        default: ''
+
+# 发布需要写 Release；其余只需要读。
+permissions:
+  contents: write
+
+# 同一个分支/标签上的旧任务没跑完就别再开一个 ——
+# 两个 CI 同时往同一个 Release 上传产物会互相覆盖。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 固定 Wails CLI 版本：它必须与 go.mod 里的
+  # github.com/wailsapp/wails/v2 主次版本一致，否则生成的绑定对不上。
+  WAILS_VERSION: v2.10.2
+  NODE_VERSION: '22'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 测试（所有触发方式都跑）
+  # ---------------------------------------------------------------------------
+  #
+  # 放在 Linux 上跑而不是 macOS：费率是 1 倍。代价是要装 GTK/WebKit
+  # 开发库 —— 因为 desktop 包在同一个 Go module 里，`go test ./...`
+  # 会连它一起编译。
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: 装 GTK / WebKit 开发库
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libgtk-3-dev
+          # Ubuntu 24.04 起只有 webkit2gtk-4.1；22.04 只有 4.0。
+          # 两个都试，装到哪个就用哪个构建标记（见下一步的探测）。
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
+            || sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev
+
+      - name: 探测 WebKitGTK 版本
+        id: webkit
+        run: |
+          if pkg-config --exists webkit2gtk-4.1; then
+            echo "tags=webkit2_41" >> "$GITHUB_OUTPUT"
+            echo "用 webkit2gtk-4.1"
+          elif pkg-config --exists webkit2gtk-4.0; then
+            echo "tags=" >> "$GITHUB_OUTPUT"
+            echo "用 webkit2gtk-4.0"
+          else
+            echo "系统里两个 webkit2gtk 都没有，装依赖那一步没成功" >&2
+            exit 1
+          fi
+
+      - name: 构建前端
+        working-directory: desktop/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: go vet
+        run: go vet -tags "${{ steps.webkit.outputs.tags }}" ./...
+
+      - name: go test
+        run: go test -tags "${{ steps.webkit.outputs.tags }}" -count=1 -timeout 300s ./...
+
+  # ---------------------------------------------------------------------------
+  # 三平台构建（只在打标签或手动触发时跑）
+  # ---------------------------------------------------------------------------
+  build:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: darwin/universal
+            slug: macos-universal
+          - os: windows-latest
+            platform: windows/amd64
+            slug: windows-amd64
+          - os: ubuntu-latest
+            platform: linux/amd64
+            slug: linux-amd64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: 装 GTK / WebKit 开发库（仅 Linux）
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libgtk-3-dev
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
+            || sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev
+
+      - name: 探测 WebKitGTK 版本（仅 Linux）
+        if: runner.os == 'Linux'
+        id: webkit
+        run: |
+          if pkg-config --exists webkit2gtk-4.1; then
+            echo "tags=webkit2_41" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 安装 Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      - name: 算版本号
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            v="${{ github.event.inputs.version }}"
+            [ -n "$v" ] || v="0.0.0-dev.$(date -u +%Y%m%d)"
+          else
+            # v0.2.0 → 0.2.0
+            v="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "本次版本号：$v"
+
+      # wails.json 里的 productVersion 决定 macOS .app 的
+      # CFBundleShortVersionString（「关于本机」「显示简介」里看到的版本）。
+      # 它是静态文件，不打这一步的话永远是 0.1.0。
+      - name: 把版本号写进 wails.json
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = "desktop/wails.json";
+            const j = JSON.parse(fs.readFileSync(p, "utf8"));
+            j.info.productVersion = process.argv[1];
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+          ' "${{ steps.ver.outputs.version }}"
+          grep productVersion desktop/wails.json
+
+      - name: 构建前端
+        working-directory: desktop/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: wails build
+        working-directory: desktop
+        shell: bash
+        env:
+          LDFLAGS: >-
+            -X miniaccount/internal/service.AppVersion=${{ steps.ver.outputs.version }}
+            -X miniaccount/internal/service.BuildStamp=${{ steps.ver.outputs.stamp }}
+            -s -w
+        run: |
+          # -s 跳过前端构建：上面已经用 `npm ci && npm run build` 建过了。
+          # 不加的话 wails 会再跑一遍 `npm install`，在 CI 上白白多花一两分钟，
+          # 而且 `npm install` 不像 `npm ci` 那样严格按锁文件装。
+          args=(-platform "${{ matrix.platform }}" -clean -s -ldflags "$LDFLAGS")
+          # 空的 -tags 在 macOS/Windows 上是无意义的，干脆不传。
+          if [ -n "${{ steps.webkit.outputs.tags }}" ]; then
+            args+=(-tags "${{ steps.webkit.outputs.tags }}")
+          fi
+          wails build "${args[@]}"
+
+      # 命令行版一起带上：它是纯 Go，同一个 job 里顺手就编出来了。
+      # 用户拿到的是一个压缩包，里面界面版和命令行版都有。
+      - name: 编译命令行版
+        shell: bash
+        env:
+          LDFLAGS: >-
+            -X miniaccount/internal/service.AppVersion=${{ steps.ver.outputs.version }}
+            -X miniaccount/internal/service.BuildStamp=${{ steps.ver.outputs.stamp }}
+            -s -w
+        run: |
+          ext=""
+          [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
+          mkdir -p out
+          go build -trimpath -ldflags "$LDFLAGS" \
+            -o "out/miniaccount${ext}" ./cmd/miniaccount
+
+      # ---------------------------------------------------------------------
+      # 打包
+      # ---------------------------------------------------------------------
+      #
+      # 压缩包一律用 ASCII 文件名：它要在三种系统、浏览器、命令行里
+      # 被下载和解压，中文名在这些环节里出问题的概率不低。
+      # 包**里面**的应用还是「小账本」—— 那是产品名，不该为了打包改掉。
+      - name: 打包（macOS）
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # ditto 是 macOS 上唯一能正确保留 .app 包内符号链接、
+          # 权限位与扩展属性的打包方式。用 zip -r 会让 .app 在某些
+          # 情况下「解压后打不开」。
+          cp -R "desktop/build/bin/miniaccount.app" "out/小账本.app"
+          ditto -c -k --keepParent "out/小账本.app" \
+            "out/miniaccount-${{ steps.ver.outputs.version }}-${{ matrix.slug }}.zip"
+          rm -rf "out/小账本.app"
+
+      - name: 打包（Windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item "desktop\build\bin\小账本.exe" "out\小账本.exe"
+          Compress-Archive -Path "out\小账本.exe", "out\miniaccount.exe" `
+            -DestinationPath "out\miniaccount-${{ steps.ver.outputs.version }}-${{ matrix.slug }}.zip"
+
+      - name: 打包（Linux）
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cp "desktop/build/bin/小账本" "out/小账本"
+          chmod +x "out/小账本" "out/miniaccount"
+          # Linux 上界面版依赖系统的 GTK / WebKitGTK，不是一个文件就能跑。
+          # 附一份说明，用户不用去翻 README。
+          cat > out/说明.txt <<'EOF'
+          小账本 —— 面向中国小微企业的本地记账软件
+
+          【界面版】./小账本
+            需要系统已安装 GTK3 与 WebKitGTK。Ubuntu / Debian：
+              sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0
+            较老的发行版（Ubuntu 22.04 / Debian 12）需要 webkit2gtk-4.0：
+              sudo apt install libgtk-3-0 libwebkit2gtk-4.0-37
+            提示：本压缩包里的界面版是在较新的 Ubuntu 上编译的，
+            如果报 GLIBC 版本不够，请改用命令行版，或自行源码编译。
+
+          【命令行版】./miniaccount
+            纯 Go 静态链接，没有额外依赖，任何发行版都能跑：
+              ./miniaccount demo --db demo.db     # 生成一个演示账套
+              ./miniaccount bs   --db demo.db     # 资产负债表
+              ./miniaccount version               # 版本号与构建时间
+
+          账套默认保存在 ~/.mini-account/dataDB/
+          EOF
+          tar -czf "out/miniaccount-${{ steps.ver.outputs.version }}-${{ matrix.slug }}.tar.gz" -C out \
+            小账本 miniaccount 说明.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.slug }}
+          path: |
+            out/*.zip
+            out/*.tar.gz
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 发布
+  # ---------------------------------------------------------------------------
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 列出产物
+        run: ls -lh dist
+
+      - name: 发 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          # 手动触发时没有标签，用一个带日期的标签，免得覆盖掉正式版本。
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="dev-$(date -u +%Y%m%d-%H%M%S)"
+          fi
+
+          cat > notes.md <<'EOF'
+          ## 下载哪个
+
+          | 你的系统 | 下载 |
+          | --- | --- |
+          | macOS（Apple 芯片 / Intel 都行） | `miniaccount-*-macos-universal.zip` |
+          | Windows 10 / 11（64 位） | `miniaccount-*-windows-amd64.zip` |
+          | Linux（64 位） | `miniaccount-*-linux-amd64.tar.gz` |
+
+          每个压缩包里有两样东西：**界面版**（`小账本`）和**命令行版**（`miniaccount`）。
+          命令行版是纯 Go、无依赖，界面版跑不起来时可以用它。
+
+          ## 第一次打开
+
+          - **macOS**：应用没有做代码签名（没有 Apple 开发者账号），
+            双击会被 Gatekeeper 拦住。右键点它 → 选「打开」→ 再点「打开」，
+            之后就能正常双击了。或者执行
+            `xattr -dr com.apple.quarantine 小账本.app`。
+          - **Windows**：SmartScreen 会提示「Windows 已保护你的电脑」，
+            点「更多信息」→「仍要运行」。
+          - **Linux**：`chmod +x 小账本` 之后运行；需要 GTK3 与 WebKitGTK（见包内说明）。
+
+          ## 账套存在哪
+
+          `<你的家目录>/.mini-account/dataDB/`。这是一个隐藏目录，
+          界面上的「打开目录」按钮可以直接在文件管理器里定位过去。
+          备份时把整个 `dataDB` 目录拷走即可。
+
+          > 这是自动构建的产物。提交号与构建时间可以用 `miniaccount version` 查看。
+          EOF
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # 重跑同一次发布：覆盖同名产物，不要报错退出。
+            gh release upload "$tag" dist/*.zip dist/*.tar.gz --clobber
+          else
+            gh release create "$tag" dist/*.zip dist/*.tar.gz \
+              --title "小账本 $tag" \
+              --notes-file notes.md
+          fi

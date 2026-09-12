@@ -1,0 +1,56 @@
+# Go 缓存（受限环境下需重定向到工程内）
+.gocache/
+.gotmp/
+.gopath/
+.gomodcache/
+
+# 构建产物
+/bin/
+/dist/
+*.exe
+*.app
+*.dmg
+
+# 桌面端
+.npm-cache/
+.home/
+desktop/frontend/node_modules/
+desktop/build/bin/
+
+# 前端产物。
+#
+# ★ 只放行 .gitkeep。
+#
+# `//go:embed all:frontend/dist` 要求这个目录在**编译时存在**，
+# 否则连 `go build ./...`、`go test ./...` 都过不去 —— 别人的
+# 第一次 clone 会直接失败。留一个占位文件，让干净检出也能编译；
+# 真正的产物由 `npm run build`（或 wails build）生成。
+#
+# 为什么是 `dist/*` 而不是 `dist/`：git 的规则是「父目录被排除时，
+# 里面的文件无法再单独放行」。写成 `dist/` 的话，下面的 ! 那行是无效的。
+desktop/frontend/dist/*
+!desktop/frontend/dist/.gitkeep
+
+# 界面冒烟测试的前端包（vite.test.config.js 的产物，可随时重建）
+desktop/frontend/testdist/
+
+# wailsjs 是 wails generate module 生成的绑定，可随时重建。
+# 但它同时是前端调用 Go 的类型来源，删掉会让 IDE 失去补全 ——
+# 因此保留在仓库里。
+
+# 账套数据（切勿提交）
+*.db
+*.db-wal
+*.db-shm
+*.files/
+*.mabak
+
+# 测试产物
+*.test
+coverage.out
+
+# 编辑器 / 操作系统
+.DS_Store
+.idea/
+.vscode/
+*.swp

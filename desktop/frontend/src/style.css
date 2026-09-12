@@ -1,0 +1,229 @@
+@import "tailwindcss";
+
+/*
+ * shadcn-vue 的主题令牌。
+ *
+ * 用 oklch 而不是 hsl：Tailwind v4 默认就是 oklch，
+ * 并且它在亮度上的感知均匀性更好 —— 深色模式下同一组令牌
+ * 不会出现「按钮比卡片还暗」这类对比度问题。
+ *
+ * 令牌名与 shadcn-vue 完全一致（--background / --primary / --muted …），
+ * 因此社区里任何一份 shadcn-vue 组件或主题都可以直接拿来用。
+ */
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.995 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.45 0.13 250);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.45 0.13 250);
+
+  /* 会计专用语义色：借/贷、盈/亏、已结账/未启用 */
+  --debit: oklch(0.50 0.15 250);
+  --credit: oklch(0.55 0.16 30);
+  --profit: oklch(0.55 0.16 150);
+  --loss: oklch(0.58 0.20 25);
+  --closed: oklch(0.62 0.02 250);
+  --warn: oklch(0.70 0.16 75);
+}
+
+.dark {
+  --background: oklch(0.16 0.005 250);
+  --foreground: oklch(0.96 0 0);
+  --card: oklch(0.205 0.005 250);
+  --card-foreground: oklch(0.96 0 0);
+  --popover: oklch(0.205 0.005 250);
+  --popover-foreground: oklch(0.96 0 0);
+  --primary: oklch(0.70 0.12 250);
+  --primary-foreground: oklch(0.16 0.005 250);
+  --secondary: oklch(0.27 0.005 250);
+  --secondary-foreground: oklch(0.96 0 0);
+  --muted: oklch(0.27 0.005 250);
+  --muted-foreground: oklch(0.70 0 0);
+  --accent: oklch(0.30 0.01 250);
+  --accent-foreground: oklch(0.96 0 0);
+  --destructive: oklch(0.65 0.20 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.70 0.12 250);
+
+  --debit: oklch(0.72 0.12 250);
+  --credit: oklch(0.75 0.13 35);
+  --profit: oklch(0.75 0.14 150);
+  --loss: oklch(0.72 0.17 25);
+  --closed: oklch(0.65 0.02 250);
+  --warn: oklch(0.80 0.14 80);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-debit: var(--debit);
+  --color-credit: var(--credit);
+  --color-profit: var(--profit);
+  --color-loss: var(--loss);
+  --color-closed: var(--closed);
+  --color-warn: var(--warn);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    /* 中文界面下系统默认字体对数字的等宽支持很差，
+       而记账软件里满屏都是数字 —— 必须显式指定一套数字等宽的回退链。 */
+    font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB",
+      system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-feature-settings: "tnum" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 金额一律用等宽数字，并且右对齐 —— 这是会计报表的基本要求，
+     否则一列数字的个位对不齐，人眼根本没法比大小。 */
+  .num {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+/* ★ 界面上的文字**一律**可以用鼠标选中、可以复制。
+ *
+ * 这里原来写的是 `user-select: none`，只给 input / textarea / .num /
+ * .selectable 开了口子 —— 理由在当时看是对的（桌面应用不该有网页那种
+ * 拖选高亮）。但实际用起来是错的：会计最常干的事就是把屏幕上的东西
+ * 拷到别处去（报表数字贴 Excel、凭证号发给同事、报错原文贴给技术支持），
+ * 而「哪块能选、哪块不能选」对用户来说毫无规律 ——
+ * 他只知道「这软件有的字选不中」。
+ *
+ * ★ 复制这条路是通的：
+ *   - 键盘：macOS 的 Cmd+C、Windows/Linux 的 Ctrl+C（Wails 的
+ *     应用菜单里挂了标准的 Edit → Copy / Select All）；
+ *   - 鼠标右键：见 desktop/main.go 的 EnableDefaultContextMenu。
+ * 两者都依赖的**前提就是这里允许选中** —— CSS 一关，两个入口一起失效。
+ *
+ * cursor: default 保留：桌面应用不该出现文本光标（I 形），
+ * 那会让人以为到处都能打字。
+ */
+body {
+  user-select: text;
+  cursor: default;
+}
+
+/*
+ * 打印 / 另存为 PDF。
+ *
+ * 设计文档把 PDF 方案定为「前端 HTML → 打印」，而不是在 Go 端生成 PDF。
+ * 理由是字体授权：中文字体动辄十几 MB，能商用的（思源系列，SIL OFL）
+ * 也要随程序分发；而操作系统的打印子系统本来就有正确的字体、
+ * 分页与「另存为 PDF」能力 —— 用它比自己画一遍可靠得多，
+ * 也不会给安装包凭空增加十几 MB。
+ *
+ * 打印时要做的事只有一件：把「屏幕上的界面」还原成「一张纸的报表」。
+ */
+@media print {
+  /* 界面上的导航、按钮、提示，纸上都不该出现 */
+  aside,
+  header,
+  .no-print,
+  button {
+    display: none !important;
+  }
+
+  /* 只留主内容区，并去掉屏幕上的留白与滚动条 */
+  body,
+  html,
+  #app {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  /* 卡片在纸上是「报表区块」，圆角与阴影都是屏幕语汇 */
+  .rounded-xl,
+  .rounded-lg,
+  .rounded-md {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* 表格线要实、要黑 —— 打印出来的浅灰线经常糊成一片 */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+  th,
+  td {
+    border-bottom: 1px solid #999 !important;
+    padding: 2px 6px !important;
+    color: #000 !important;
+  }
+  thead {
+    display: table-header-group; /* 跨页时表头重复 */
+  }
+  tr {
+    break-inside: avoid; /* 一行不被拆到两页 */
+  }
+
+  /* 金额的语义色（借贷、盈亏）在黑白打印下会变成一团灰，
+     因此打印时统一成黑色，靠借贷两列的位置区分 */
+  .num,
+  [class*="text-[var(--"] {
+    color: #000 !important;
+  }
+
+  /* 报表标题在每页顶端重复没有意义，但至少不要被切断 */
+  h1, h2, h3 {
+    break-after: avoid;
+  }
+}

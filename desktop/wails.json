@@ -1,0 +1,16 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "miniaccount",
+  "outputfilename": "小账本",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "info": {
+    "companyName": "miniaccount",
+    "productName": "小账本",
+    "productVersion": "0.1.0",
+    "copyright": "",
+    "comments": "面向中国小微企业的本地记账软件"
+  }
+}
