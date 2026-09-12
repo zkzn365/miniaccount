@@ -76,7 +76,8 @@ func (s Status) Label() string {
 	case StatusMatched:
 		return "待确认"
 	case StatusPosted:
-		return "已记账"
+		// 同报销单：只表示凭证已生成，凭证本身还是草稿（过账在账期结算）。
+		return "已生成凭证"
 	case StatusIgnored:
 		return "已忽略"
 	default:

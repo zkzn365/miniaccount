@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -253,20 +254,25 @@ func TestPeriodHealthDetectsDrafts(t *testing.T) {
 	for _, it := range h.Items {
 		if it.Key == "draft_vouchers" {
 			found = true
-			if it.Level != HealthWarn {
-				t.Errorf("草稿应为警告级，得到 %s", it.Level)
+			// ★ 草稿不是问题：凭证录完只落草稿、到账期结算才统一过账，
+			// 所以本期的草稿是**正常的**。体检只把张数说清楚，
+			// 让用户在结账预览里提前看到「会多出几张凭证」。
+			if it.Level != HealthOK {
+				t.Errorf("草稿不该是警告级（它是正常状态），得到 %s", it.Level)
 			}
 			if it.Count != 1 {
 				t.Errorf("草稿数 = %d，期望 1", it.Count)
+			}
+			if !strings.Contains(it.Detail, "结账") {
+				t.Errorf("要说清楚草稿会在结账时过账：%q", it.Detail)
 			}
 		}
 	}
 	if !found {
 		t.Error("应检出草稿凭证项")
 	}
-	// 草稿只是警告，不阻断结账
 	if !h.CanClose() {
-		t.Error("草稿不应阻断结账")
+		t.Error("草稿不应阻断结账 —— 结账本来就会把它们过账")
 	}
 }
 

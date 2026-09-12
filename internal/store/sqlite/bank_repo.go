@@ -843,16 +843,12 @@ func (r *BankRepo) PostFlows(ctx context.Context, flowIDs []int64,
 	res := &PostFlowResult{Failures: map[int64]string{}}
 
 	err := r.db.WithTx(ctx, func(tx *Tx) error {
-		accIDs, err := r.db.Accounts().IDsByCodeTx(ctx, tx)
-		if err != nil {
-			return err
-		}
 		// 科目树用于校验（对方科目必须是可记账的明细科目）
 		tree, err := r.db.Accounts().TreeFrom(ctx, tx)
 		if err != nil {
 			return err
 		}
-		// kinds 由 PostInTx 内部的校验使用；这里显式取一次保证
+		// kinds 由 SaveDraftInTx 内部的校验使用；这里显式取一次保证
 		// 「往来单位是否存在」在生成凭证之前就被发现（给出更早、更准确的报错）
 		if _, err := r.db.Contacts().KindsFrom(ctx, tx); err != nil {
 			return err
@@ -900,7 +896,7 @@ func (r *BankRepo) PostFlows(ctx context.Context, flowIDs []int64,
 			}
 
 			// 生成凭证
-			vc, err := r.postBankVoucher(ctx, tx, f, entries, accIDs, postingBy, at)
+			vc, err := r.postBankVoucher(ctx, tx, f, entries, postingBy)
 			if err != nil {
 				res.Failures[fid] = err.Error()
 				continue
@@ -943,15 +939,17 @@ func (r *BankRepo) getFlowTx(ctx context.Context, tx *Tx, id int64) (*bank.Flow,
 	return list[0], nil
 }
 
-// postBankVoucher 在给定事务内，把一条流水转换成凭证并过账。
+// postBankVoucher 在给定事务内，把一条流水转换成**草稿**凭证。
 //
-// 复用 VoucherRepo.PostInTx，因此银行凭证与手工凭证走的是**同一条**过账路径：
-// 同样分配凭证字号、同样走 7 条不变式校验、同样写总账。
-// 刻意不为银行流水另写一套过账逻辑 —— 两套逻辑迟早会分叉，
+// 复用 VoucherRepo.SaveDraftInTx，因此银行凭证与手工凭证走的是
+// **同一条**存草稿路径：同样走完整的科目与辅助核算校验。
+// 刻意不为银行流水另写一套逻辑 —— 两套逻辑迟早会分叉，
 // 而分叉的那一天，账就会对不上。
+//
+// ★ 落的是草稿：过账只发生在账期结算（见 Service.Close）。
+// 所以返回的 No 是空的 —— 草稿不占号。
 func (r *BankRepo) postBankVoucher(ctx context.Context, tx *Tx, f *bank.Flow,
-	entries []bank.Entry, accIDs map[string]int64, postingBy string,
-	at time.Time) (*PostedVoucher, error) {
+	entries []bank.Entry, postingBy string) (*PostedVoucher, error) {
 
 	// 凭证日期用流水日期：银行流水是既成事实，记账日期应与实际资金
 	// 变动日期一致，而不是「录入当天」。
@@ -981,14 +979,14 @@ func (r *BankRepo) postBankVoucher(ctx context.Context, tx *Tx, f *bank.Flow,
 		}
 	}
 
-	res, err := r.db.Vouchers().PostInTx(ctx, tx, PostInput{
-		Voucher: vc, Accounts: accIDs, PostingBy: postingBy, At: at,
+	res, err := r.db.Vouchers().SaveDraftInTx(ctx, tx, DraftInput{
+		Voucher: vc, CreatedBy: postingBy, Generated: true,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &PostedVoucher{
-		FlowID: f.ID, VoucherID: res.VoucherID, No: res.No, Amount: f.Amount,
+		FlowID: f.ID, VoucherID: res.VoucherID, No: "", Amount: f.Amount,
 	}, nil
 }
 

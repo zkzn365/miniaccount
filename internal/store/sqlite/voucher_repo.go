@@ -33,6 +33,143 @@ var (
 // 写入
 // ---------------------------------------------------------------------------
 
+// PostPeriodDraftsResult 是一次「过账本期全部草稿」的结果。
+type PostPeriodDraftsResult struct {
+	// Posted 是本次过账的张数。
+	Posted int
+	// Nos 是分配到的凭证号，按过账顺序。
+	Nos []string
+	// IDs 是过账的凭证 id，与 Nos 一一对应。
+	IDs []int64
+}
+
+// PostPeriodDraftsInTx 把某一期间的**全部草稿**过账。
+//
+// ★ 这是本工程里**唯一**的过账入口（另一处是红字冲销与反结账，
+// 见 Reverse 的说明）。
+//
+// 凭证一经录入只落草稿：不占号、不进总账；到账期结算时才统一过账。
+// 于是「录入」与「记账」分成两个动作 —— 这正是手工账的做法
+// （制单 → 审核 → 记账），也是把「凭证号连续」「期间完整」
+// 变成**结构上必然**、而不是靠人自觉的唯一办法。
+//
+// 过账顺序按**业务日期**，凭证号因此与日期同序。同一张草稿过不了账
+// （科目被停用、辅助核算缺失、期间已结账…）就整批回滚，并把是
+// **哪一张**报出来 —— 一次结账卡住却不说卡在哪张凭证，用户只能一张张试。
+func (r *VoucherRepo) PostPeriodDraftsInTx(ctx context.Context, tx *Tx, k period.Key,
+	postingBy string, at time.Time) (*PostPeriodDraftsResult, error) {
+	if strings.TrimSpace(postingBy) == "" {
+		return nil, voucher.ErrMissingMaker
+	}
+	if at.IsZero() {
+		at = time.Now()
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT id FROM voucher
+		 WHERE year = ? AND month = ? AND status = 'draft'
+		 ORDER BY biz_date, id`, k.Year, k.Month)
+	if err != nil {
+		return nil, translateErr(err)
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, translateErr(err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, translateErr(err)
+	}
+
+	out := &PostPeriodDraftsResult{Posted: len(ids)}
+	accounts, err := r.db.Accounts().IDsByCodeTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	for i, id := range ids {
+		v, err := loadVoucherTx(ctx, tx, id)
+		if err != nil {
+			return nil, fmt.Errorf("过账本期草稿时读不出第 %d 张（id=%d）：%w", i+1, id, err)
+		}
+		res, err := r.PostInTx(ctx, tx, PostInput{
+			Voucher: v, Accounts: accounts,
+			PostingBy: strings.TrimSpace(postingBy), At: at,
+		})
+		if err != nil {
+			return nil, fmt.Errorf(
+				"%s 有草稿过不了账，本次过账已全部回滚。\n"+
+					"出问题的是第 %d 张：%s %s（摘要「%s」）。\n%w",
+				k, i+1, v.BizDate, draftName(v), v.Remark, err)
+		}
+		out.Nos = append(out.Nos, res.No)
+		out.IDs = append(out.IDs, res.VoucherID)
+	}
+	return out, nil
+}
+
+// draftName 给还没有号的草稿起一个能认出来的名字。
+func draftName(v *voucher.Voucher) string {
+	if v == nil {
+		return "（空凭证）"
+	}
+	if strings.TrimSpace(v.No) != "" {
+		return v.No
+	}
+	return fmt.Sprintf("草稿 #%d", v.ID)
+}
+
+// PostPeriodDrafts 把某一期间的全部草稿过账（自开事务）。
+func (r *VoucherRepo) PostPeriodDrafts(ctx context.Context, k period.Key,
+	postingBy string, at time.Time) (*PostPeriodDraftsResult, error) {
+	var out *PostPeriodDraftsResult
+	err := r.db.WithTx(ctx, func(tx *Tx) error {
+		var e error
+		out, e = r.PostPeriodDraftsInTx(ctx, tx, k, postingBy, at)
+		return e
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DraftsOfPeriod 返回某一期间待过账的草稿张数与样例，**不写数据**。
+//
+// 结账预览用它把「结账会先把 12 张草稿过账」这句话说在前面，
+// 而不是等用户点了结账才发现账上多了一批凭证。
+func (r *VoucherRepo) DraftsOfPeriod(ctx context.Context, k period.Key) (
+	count int, samples []string, err error) {
+	if err := r.db.sql.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM voucher
+		 WHERE year = ? AND month = ? AND status = 'draft'`, k.Year, k.Month).
+		Scan(&count); err != nil {
+		return 0, nil, translateErr(err)
+	}
+	rows, err := r.db.sql.QueryContext(ctx, `
+		SELECT biz_date, COALESCE(remark,'') FROM voucher
+		 WHERE year = ? AND month = ? AND status = 'draft'
+		 ORDER BY biz_date, id LIMIT 5`, k.Year, k.Month)
+	if err != nil {
+		return 0, nil, translateErr(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d, remark string
+		if err := rows.Scan(&d, &remark); err != nil {
+			return 0, nil, translateErr(err)
+		}
+		if strings.TrimSpace(remark) == "" {
+			remark = "（无摘要）"
+		}
+		samples = append(samples, d+" "+remark)
+	}
+	return count, samples, translateErr(rows.Err())
+}
+
 // PostInput 是过账所需的全部输入。
 type PostInput struct {
 	Voucher *voucher.Voucher
@@ -886,7 +1023,38 @@ var (
 //
 // 因此这里只写 voucher + voucher_entry 两张表，
 // **不写 ledger_entry**，也不分配序号（seq=0，展示号为空）。
+// SaveDraft 保存一张草稿凭证（人工录入的）。
+//
+// 草稿也要过一遍领域校验中与「能不能记账」无关的部分：
+// 分录数、借贷平衡、摘要非空、科目存在且可记账。
+// 否则用户会一直改到点「过账」才发现问题，白费功夫。
 func (r *VoucherRepo) SaveDraft(ctx context.Context, in DraftInput) (*DraftResult, error) {
+	var out *DraftResult
+	err := r.db.WithTx(ctx, func(tx *Tx) error {
+		var e error
+		out, e = r.SaveDraftInTx(ctx, tx, in)
+		return e
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DraftInput 是保存草稿的输入。
+// SaveDraftInTx 在**调用方给定的**事务内保存一张草稿凭证。
+//
+// 与 PostInTx 的区别，正是「存草稿」与「过账」的区别：
+//
+//	PostInTx      校验期间已开启 → 分配凭证号 → 写总账分录 → 状态置 posted
+//	SaveDraftInTx 只把凭证与分录按草稿落库，其余一概不做
+//
+// 工资单、报销单、发票、银行流水这些模块生成的凭证全部走这里 ——
+// 凭证**一律先落草稿**，过账只发生在账期结算
+// （见 Service.PostPeriodDrafts）。人工录入的草稿走 SaveDraft。
+//
+// 调用方负责提交/回滚，并保证 tx 与 r.db 是同一个库。
+func (r *VoucherRepo) SaveDraftInTx(ctx context.Context, tx *Tx, in DraftInput) (*DraftResult, error) {
 	v := in.Voucher
 	if v == nil {
 		return nil, fmt.Errorf("%w: 凭证为空", ErrVoucherState)
@@ -900,78 +1068,118 @@ func (r *VoucherRepo) SaveDraft(ctx context.Context, in DraftInput) (*DraftResul
 	k := period.Key{Year: v.BizDate.Year, Month: v.BizDate.Month}
 	v.Period = k
 
-	// 草稿也要过一遍领域校验中与「能不能记账」无关的部分：
-	// 分录数、借贷平衡、摘要非空、科目存在且可记账。
-	// 否则用户会一直改到点「过账」才发现问题，白费功夫。
-	var out DraftResult
-	err := r.db.WithTx(ctx, func(tx *Tx) error {
-		if !in.SkipValidation {
-			vctx, err := r.validationContext(ctx, tx)
-			if err != nil {
-				return err
-			}
-			if _, err := v.ValidateDraft(vctx); err != nil {
-				return err
-			}
-		}
-		accounts, err := r.db.Accounts().IDsByCodeTx(ctx, tx)
-		if err != nil {
-			return err
-		}
+	// 草稿不该忘掉自己的来源：银行流水、工资单、报销单都要靠
+	// source/source_id 反查「这张凭证是谁生成的」。
+	if v.Status == "" {
+		v.Status = voucher.StatusDraft
+	}
+	if v.Status != voucher.StatusDraft {
+		return nil, fmt.Errorf("%w: 新建的凭证只能是草稿，实际 %s",
+			ErrVoucherState, v.Status)
+	}
 
-		if v.ID == 0 {
-			id, err := insertVoucher(ctx, tx, v)
-			if err != nil {
-				return err
-			}
-			v.ID = id
-		} else {
-			// 只允许改草稿 —— 已过账的凭证只能红字冲销
-			var status string
-			if err := tx.QueryRow(ctx,
-				`SELECT status FROM voucher WHERE id = ?`, v.ID).Scan(&status); err != nil {
-				return translateErr(err)
-			}
-			if voucher.Status(status) != voucher.StatusDraft {
-				return fmt.Errorf("%w（当前状态 %s）", ErrNotDraft, status)
-			}
-			if _, err := tx.Exec(ctx, `
-				UPDATE voucher SET year = ?, month = ?, word = ?, biz_date = ?,
-					attach_count = ?, remark = ?, updated_at = ?
-				 WHERE id = ?`,
-				k.Year, k.Month, string(v.Word), v.BizDate.String(),
-				v.AttachCount, v.Remark, nowString(), v.ID); err != nil {
-				return translateErr(err)
-			}
-			// 分录整体替换：草稿的「改一行」在界面上就是改一行，
-			// 但存下来最简单也最不容易出错的表达是「整组替换」。
-			// 草稿不占号、无总账，替换没有任何副作用。
-			if _, err := tx.Exec(ctx,
-				`DELETE FROM voucher_entry WHERE voucher_id = ?`, v.ID); err != nil {
-				return translateErr(err)
-			}
-		}
-
-		ids, err := insertDraftEntries(ctx, tx, v, accounts)
-		if err != nil {
-			return err
-		}
-		out.VoucherID = v.ID
-		out.EntryIDs = ids
-		return nil
-	})
+	// ★ 期间状态必须在存草稿时就检查，不能等到过账。
+	//
+	// 原来只有过账会挡「往已结账期间里写」。现在凭证一律先落草稿，
+	// 若这里不挡，用户就能往一个**已经关掉的月份**里塞草稿：
+	// 它不占号、不进总账，结账也不会再跑那一期，于是这张凭证
+	// 永远躺在账套里、谁也看不见 —— 而用户以为记上了。
+	vctx, err := r.validationContext(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
+	if !in.SkipValidation {
+		var status string
+		err := tx.QueryRow(ctx,
+			`SELECT status FROM period WHERE year = ? AND month = ?`, k.Year, k.Month).
+			Scan(&status)
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("%w: %s", period.ErrPeriodNotFound, k)
+		}
+		if err != nil {
+			return nil, translateErr(err)
+		}
+		if period.Status(status) != period.StatusOpen {
+			return nil, fmt.Errorf("%w: %s 当前状态为 %s。"+
+				"凭证只能记在已开启的期间里；要补记已结账的月份，"+
+				"请先反结账", period.ErrNotOpen, k, period.Status(status).Label())
+		}
+	}
+	if in.SkipValidation {
+		// 迁移与测试专用：跳过校验也要挡住结构性问题
+	} else if in.Generated {
+		// ★ 模块生成的凭证按**已过账的标准**校验，不留情面。
+		//
+		// 这些凭证是算出来的，不是人敲进去的：校验不过说明模块算错了。
+		// 用草稿的宽松标准放过去，等于把错误推迟到用户结账那一刻才炸 ——
+		// 那时候账套里已经堆了一个月的凭证，谁也说不清是哪张不对。
+		if _, err := v.Validate(vctx); err != nil {
+			return nil, err
+		}
+		if err := rejectInputVATForSmallBook(ctx, tx, v); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err := v.ValidateDraft(vctx); err != nil {
+			return nil, err
+		}
+	}
+
+	accounts, err := r.db.Accounts().IDsByCodeTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+
+	var out DraftResult
+	if v.ID == 0 {
+		id, err := insertVoucher(ctx, tx, v)
+		if err != nil {
+			return nil, err
+		}
+		v.ID = id
+	} else {
+		// 只允许改草稿 —— 已过账的凭证只能红字冲销
+		var status string
+		if err := tx.QueryRow(ctx,
+			`SELECT status FROM voucher WHERE id = ?`, v.ID).Scan(&status); err != nil {
+			return nil, translateErr(err)
+		}
+		if voucher.Status(status) != voucher.StatusDraft {
+			return nil, fmt.Errorf("%w（当前状态 %s）", ErrNotDraft, status)
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE voucher SET year = ?, month = ?, word = ?, biz_date = ?,
+				attach_count = ?, remark = ?, source = ?, source_id = ?, updated_at = ?
+			 WHERE id = ?`,
+			k.Year, k.Month, string(v.Word), v.BizDate.String(),
+			v.AttachCount, v.Remark, string(v.Source), nullInt64(v.SourceID),
+			nowString(), v.ID); err != nil {
+			return nil, translateErr(err)
+		}
+		// 分录整体替换，理由同 SaveDraft：草稿不占号、无总账，替换没有副作用。
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM voucher_entry WHERE voucher_id = ?`, v.ID); err != nil {
+			return nil, translateErr(err)
+		}
+	}
+
+	ids, err := insertDraftEntries(ctx, tx, v, accounts)
+	if err != nil {
+		return nil, err
+	}
+	out.VoucherID = v.ID
+	out.EntryIDs = ids
 	return &out, nil
 }
 
-// DraftInput 是保存草稿的输入。
 type DraftInput struct {
 	Voucher   *voucher.Voucher
 	CreatedBy string
 	// SkipValidation 仅供迁移与测试使用。
 	SkipValidation bool
+	// Generated 表示这张凭证是**模块算出来的**（工资、报销、发票、银行），
+	// 不是人敲进去的：校验按已过账的标准来，不按草稿的宽松标准。
+	Generated bool
 }
 
 // DraftResult 是保存草稿的结果。
@@ -1005,6 +1213,20 @@ func (r *VoucherRepo) DeleteDraft(ctx context.Context, id int64) error {
 }
 
 // Reverse 对一张已过账凭证做红字冲销，返回冲销凭证的 id 与号。
+//
+// # 为什么冲销凭证是**立即过账**的
+//
+// 全工程的规则是「凭证先落草稿，过账只在账期结算」，冲销是唯一的例外，
+// 而且必须是例外：
+//
+//   - 冲销的对象**只能是已过账的凭证**，它的全部意义就是让总账上
+//     那张凭证归零。留成草稿，总账里那张错的还在，报表照旧是错的 ——
+//     用户做了一次「冲销」，看到的却什么都没变。
+//   - 冲销同时把原凭证标成 voided（见 markVoided）。原凭证在账上已经
+//     注销、冲销却还没入账，账面会凭空少一笔。
+//
+// 反结账（closing_repo.go）出于同样的理由立即过账：它要撤掉的是
+// 已结账期间的结转分录，留着草稿就等于期间开了、账却没退回。
 //
 // # 冲销日期
 //

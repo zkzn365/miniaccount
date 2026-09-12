@@ -44,18 +44,23 @@ const todos = computed(() => {
   if (!d) return []
   const out = []
   if (d.draftVouchers > 0) {
+    // ★ 草稿是**正常状态**，不是「有活没干完」。
+    //
+    // 凭证录完只落草稿（不占号、不进总账），到账期结算时统一过账。
+    // 所以这条待办：一是别用警告色吓人，二是必须说清楚
+    // 「过账不用你动手，结账时会做」—— 否则用户会满界面找那个过账按钮。
     out.push({
-      key: 'draft', tone: 'warn', icon: FileClock,
-      title: `${d.draftVouchers} 张草稿凭证待过账`,
-      detail: '草稿不占凭证号，也不进总账 —— 有草稿说明有没做完的录入',
-      to: { path: '/reports' },
+      key: 'draft', tone: 'info', icon: FileClock,
+      title: `${d.draftVouchers} 张凭证待过账`,
+      detail: '凭证录完只存草稿，结账时会先把它们过账（自动分配凭证号）再结转损益',
+      to: { path: '/periods' },
     })
   }
   if (d.unpostedBankFlows > 0) {
     out.push({
       key: 'bank', tone: 'info', icon: Landmark,
       title: `${d.unpostedBankFlows} 条银行流水未生成凭证`,
-      detail: '导入的流水需要匹配对方科目后才能记账',
+      detail: '导入的流水需要匹配对方科目后才能生成凭证',
       to: { path: '/ai' },
     })
   }

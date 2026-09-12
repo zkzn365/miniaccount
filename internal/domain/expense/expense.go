@@ -60,7 +60,10 @@ func (s Status) Label() string {
 	case StatusPaid:
 		return "已付款"
 	case StatusPosted:
-		return "已记账"
+		// ★ 不是「已记账」：这一状态只表示**凭证已生成**，
+		// 而凭证此刻还是草稿 —— 本工程的过账只发生在账期结算。
+		// 写「已记账」会让用户以为账上已经有了。
+		return "已生成凭证"
 	case StatusRejected:
 		return "已驳回"
 	default:

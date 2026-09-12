@@ -124,8 +124,13 @@ func TestPostInvoiceCreatesVoucher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("发票生成凭证失败: %v", err)
 	}
-	if !posted.Posted || posted.VoucherNo == "" {
-		t.Errorf("应标记为已入账并有凭证号: %+v", posted)
+	// ★ 发票现在生成的是**草稿**凭证：没有任何凭证号（草稿不占号），
+	// 但发票自己确实已经挂上了那张凭证。过账发生在账期结算。
+	if !posted.Posted || posted.VoucherLabel == "" {
+		t.Errorf("应标记为已生成凭证: %+v", posted)
+	}
+	if posted.VoucherNo != "" {
+		t.Errorf("★ 还没结算就不该有凭证号（草稿不占号），实际 %q", posted.VoucherNo)
 	}
 
 	// ★ 发票是单据、凭证是账：这张凭证明细要能对上
@@ -341,8 +346,12 @@ func TestClaimLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("报销单记账失败: %v", err)
 	}
-	if posted.VoucherNo == "" {
-		t.Error("记账后应有凭证号")
+	// ★ 同上：生成的是草稿凭证，没有号；过账在账期结算
+	if posted.VoucherLabel == "" {
+		t.Error("应有凭证标识（草稿也要能认出来是哪一张）")
+	}
+	if posted.VoucherNo != "" {
+		t.Errorf("★ 还没结算就不该有凭证号，实际 %q", posted.VoucherNo)
 	}
 
 	// 试算必须平衡

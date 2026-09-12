@@ -74,10 +74,24 @@ type CloseResult struct {
 
 	// Health 是结账前体检报告，便于界面回显「检查了哪些项」。
 	Health *PeriodHealth `json:"health"`
+
+	// PostedDrafts 是本次结账**顺带过账**的草稿凭证。
+	//
+	// ★ 账套里唯一的过账时机就是这里。凭证录完只落草稿，
+	// 到账期结算时统一过账，然后才结转损益、关期间。
+	PostedDrafts *PostPeriodDraftsResult `json:"postedDrafts"`
 }
 
 // Planned 报告本次结账是否真的写了凭证。
 func (r *CloseResult) Planned() bool { return r.VoucherID != 0 }
+
+// PostedNos 是本次结账顺带过账的凭证号；没过账任何草稿时返回 nil。
+func (r *CloseResult) PostedNos() []string {
+	if r.PostedDrafts == nil {
+		return nil
+	}
+	return r.PostedDrafts.Nos
+}
 
 // Plan 计算某期间的结账计划，**不写任何数据**。
 //
@@ -221,6 +235,21 @@ func (r *ClosingRepo) ClosePeriod(ctx context.Context, in CloseInput) (*CloseRes
 			return fmt.Errorf("%w: %s 仍未结账", ErrPriorOpen, *prior)
 		}
 
+		// 2b. ★ 先把本期的草稿凭证**全部过账**，再算结转计划。
+		//
+		// 顺序不能颠倒：结转计划是按总账算出来的，草稿还没过账时
+		// 总账里根本没有本期的数，算出来的损益必然是错的（而且
+		// 「没数据的正确结果」看起来跟「真的没损益」一模一样）。
+		//
+		// 放在同一个事务里：过账、结转、关期间要么都成，要么都不成。
+		// 分开做的话，中途失败会留下一批「已过账但期间还开着」的凭证，
+		// 用户再点一次结账，凭证号就重号了。
+		posted, err := r.db.Vouchers().PostPeriodDraftsInTx(ctx, tx, k, in.PostingBy, at)
+		if err != nil {
+			return err
+		}
+		out.PostedDrafts = posted
+
 		// 3. 计算结转计划
 		pnl, err := pnlBalances(ctx, tx, k)
 		if err != nil {
@@ -237,6 +266,11 @@ func (r *ClosingRepo) ClosePeriod(ctx context.Context, in CloseInput) (*CloseRes
 		out.Plan = plan
 
 		// 4. 写结转凭证（若有）
+		//
+		// 这里用 PostInTx 而不是存草稿：结转凭证是**结账这个动作本身**
+		// 产生的一步，此刻就是它的过账时机（上面第 2b 步已经先把本期
+		// 草稿全部过账了）。留成草稿的话，期间关了、结转却还没入账，
+		// 下期一开局损益就带着上一期的余额。
 		if plan.HasEntries() {
 			if err := plan.Validate(); err != nil {
 				return err

@@ -792,7 +792,7 @@ type RunStatus string
 const (
 	RunDraft     RunStatus = "draft"     // 草稿：可改可重算
 	RunConfirmed RunStatus = "confirmed" // 已确认：锁定金额
-	RunPosted    RunStatus = "posted"    // 已过账：已生成凭证
+	RunPosted    RunStatus = "posted"    // 已生成凭证（凭证本身是草稿，过账在账期结算）
 )
 
 // Label 返回中文名。
@@ -803,7 +803,8 @@ func (s RunStatus) Label() string {
 	case RunConfirmed:
 		return "已确认"
 	case RunPosted:
-		return "已过账"
+		// 同报销单：只表示凭证已生成，凭证本身还是草稿（过账在账期结算）。
+		return "已生成凭证"
 	default:
 		return string(s)
 	}

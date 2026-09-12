@@ -463,14 +463,35 @@ func TestBankFlowToVoucherEndToEnd(t *testing.T) {
 		t.Errorf("不应有失败: %v", res.Failures)
 	}
 
-	// 凭证号按期间连续
+	// ★ 生成出来的是**草稿**：不占号、不进总账。
+	// 过账只发生在账期结算，这里显式走一次（等价于结账时的第一步）。
+	for i, v := range res.Vouchers {
+		if v.No != "" {
+			t.Errorf("第 %d 张是草稿，不该有凭证号，实际 %q", i+1, v.No)
+		}
+	}
+	postDrafts(t, f.book.DB, 2025, 9)
+
+	// 过账之后号按期间连续
+	posted, err := f.book.DB.Vouchers().PostPeriodDrafts(ctx, period.NewKey(2025, 9),
+		"王主管", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if posted.Posted != 0 {
+		t.Errorf("草稿应当已经全部过账，还剩 %d 张", posted.Posted)
+	}
 	wantNos := []string{
 		"记-2025-09-0001", "记-2025-09-0002",
 		"记-2025-09-0003", "记-2025-09-0004",
 	}
 	for i, v := range res.Vouchers {
-		if v.No != wantNos[i] {
-			t.Errorf("第 %d 张凭证号 = %q，期望 %q", i+1, v.No, wantNos[i])
+		got, err := f.book.DB.Vouchers().Get(ctx, v.VoucherID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.No != wantNos[i] {
+			t.Errorf("第 %d 张凭证号 = %q，期望 %q", i+1, got.No, wantNos[i])
 		}
 	}
 

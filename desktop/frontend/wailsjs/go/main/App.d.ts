@@ -182,8 +182,6 @@ export function PostInvoice(arg1:main.PostInvoiceRequest):Promise<service.Invoic
 
 export function PostPayroll(arg1:number,arg2:string):Promise<service.PayrollRunDetail>;
 
-export function PostVoucher(arg1:number,arg2:string):Promise<service.VoucherDetail>;
-
 export function PreviewAIPrompt(arg1:string):Promise<service.AIPromptPreview>;
 
 export function PreviewClose(arg1:main.PeriodRequest):Promise<service.ClosingPreview>;
@@ -219,8 +217,6 @@ export function SaveAIPromptConfig(arg1:service.AIPromptInput):Promise<void>;
 export function SaveAIProvider(arg1:sqlite.AIProviderConfig):Promise<number>;
 
 export function SaveAccount(arg1:service.AccountInput):Promise<service.AccountRow>;
-
-export function SaveAndPost(arg1:main.VoucherRequest):Promise<service.VoucherDetail>;
 
 export function SaveAuditSettings(arg1:service.LogSettings):Promise<void>;
 

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
-  Plus, Trash2, CheckCircle2, Save, ShieldCheck, AlertTriangle, Info, Search,
+  Plus, Trash2, Save, ShieldCheck, AlertTriangle, Info, Search,
   Paperclip, X, FileText,
 } from 'lucide-vue-next'
 import { api, notify } from '@/lib/api'
@@ -35,9 +35,14 @@ function emptyLine() {
   }
 }
 
+// ★ 表单里**没有**记账人。
+//
+// 记账签章是在过账那一刻盖上去的，而本程序只在账期结算时过账
+// （用账期管理里填的操作人）。录入阶段问「谁是记账人」，
+// 问的是一件还没发生的事 —— 用户填了也没用，反而以为填完就记上账了。
 const form = ref({
   id: 0, word: '记', date: '', remark: '',
-  attachCount: 0, createdBy: '', postedBy: '',
+  attachCount: 0, createdBy: '',
   lines: [emptyLine(), emptyLine()],
 })
 
@@ -57,10 +62,8 @@ async function loadVoucher() {
       id: 0, word: '记',
       date: meta.value?.today ?? '',
       remark: '', attachCount: 0,
-      // 制单人与记账人默认都是本机记住的记账人（见 lib/operator.js）。
-      // 制单人允许与记账人不同（复核场景），所以是两个字段。
+      // 制单人默认是本机记住的记账人（见 lib/operator.js）
       createdBy: bookkeeper.value,
-      postedBy: bookkeeper.value,
       lines: [emptyLine(), emptyLine()],
     }
     checkResult.value = null
@@ -73,7 +76,6 @@ async function loadVoucher() {
     id: d.id, word: d.word, date: d.date, remark: d.remark,
     attachCount: d.attachCount,
     createdBy: d.createdBy || '',
-    postedBy: d.postedBy || bookkeeper.value,
     lines: d.lines.map((l) => ({
       accountCode: l.accountCode, summary: l.summary,
       debitYuan: l.debit ? (l.debit / 100).toFixed(2) : '',
@@ -284,7 +286,6 @@ function payload() {
     remark: form.value.remark,
     attachCount: Number(form.value.attachCount) || 0,
     createdBy: form.value.createdBy,
-    postedBy: form.value.postedBy,
     lines: form.value.lines.map((l) => ({
       accountCode: l.accountCode,
       summary: l.summary,
@@ -312,26 +313,13 @@ async function save() {
   emit('saved', r.data)
 }
 
-async function saveAndPost() {
-  if (!totals.value.balanced) {
-    notify(`借贷不平衡，差额 ${fmtMoney(totals.value.diff)}。差额不会被自动抹平 —— 请核对该记哪边。`, 'warn')
-    return
-  }
-  if (!form.value.postedBy.trim()) { notify('请填写记账人 —— 记账凭证需要有记账签章', 'warn'); return }
-  busy.value = true
-  const r = await api.saveAndPost(payload())
-  busy.value = false
-  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
-  if (form.value.postedBy.trim()) await rememberBookkeeper(form.value.postedBy.trim())
-  emit('saved', r.data)
-}
 </script>
 
 <template>
   <Modal
     v-model:open="open"
     :title="form.id ? '编辑凭证' : '录入凭证'"
-    description="借贷必须相等才能记账。差额不会被自动抹平 —— 那意味着记错了，应该由人来判断。"
+    description="借贷必须相等才能保存。差额不会被自动抹平 —— 那意味着记错了，应该由人来判断。草稿到账期结算时才过账。"
     width="max-w-5xl"
   >
     <Spinner v-if="loading" />
@@ -521,18 +509,14 @@ async function saveAndPost() {
     </div>
 
     <template #footer>
-      <div class="mr-auto flex items-center gap-2">
-        <Input v-model="form.postedBy" class="h-8 w-36" placeholder="记账人" />
-        <span class="flex items-center gap-1 text-xs text-muted-foreground">
-          <Info class="size-3" /> 记账签章
-        </span>
+      <div class="mr-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Info class="size-3" />
+        保存的是<b class="font-medium">草稿</b>：不占凭证号，也不进总账 ——
+        到账期结算时统一过账
       </div>
       <Button variant="ghost" :disabled="busy" @click="open = false">取消</Button>
-      <Button variant="outline" :disabled="busy" @click="save">
-        <Save /> 存为草稿
-      </Button>
-      <Button :disabled="busy || !canSubmit" @click="saveAndPost">
-        <CheckCircle2 /> 保存并记账
+      <Button :disabled="busy || !canSubmit" @click="save">
+        <Save /> 保存草稿
       </Button>
     </template>
   </Modal>

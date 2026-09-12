@@ -145,6 +145,15 @@ func (f *reconciliationFixture) postFlows(t *testing.T, idx ...int) {
 	if res.Created != len(ids) {
 		t.Fatalf("期望过账 %d 条，实际 %d 条，失败：%v", len(ids), res.Created, res.Failures)
 	}
+	// ★ 银行流水生成的也是**草稿**凭证：不占号、不进总账。
+	// 银行余额调节表读的是总账，所以这里要显式过账一次
+	// （界面上这一步在结账里）。
+	for _, v := range res.Vouchers {
+		if v.No != "" {
+			t.Errorf("草稿不该有凭证号，实际 %q", v.No)
+		}
+	}
+	postDrafts(t, f.book.DB, 2025, 9)
 }
 
 // asOf 是调节表的截止日。

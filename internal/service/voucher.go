@@ -513,7 +513,16 @@ func firstNonEmpty(a, b string) string {
 	return b
 }
 
-// PostVoucher 把一张草稿过账。
+// PostVoucher 把**一张**草稿过账。
+//
+// ★ 界面上没有这个动作 —— 过账只发生在账期结算。
+//
+// 凭证录完只落草稿：不占号、不进总账。到账期结算时，
+// Service.Close 会调用 PostPeriodDrafts 把本期草稿统一过账，
+// 然后才结转损益、关期间（见 internal/store/sqlite/closing_repo.go）。
+//
+// 这个函数保留下来，是因为「把一张草稿过账」是结算的实现细节，
+// 也是测试与命令行需要的原语；它不是一条给用户走的旁路。
 //
 // postedBy 是记账人 —— 与制单人分开：中国实务要求制单、审核、
 // 记账三个签章可追溯，小微企业往往一人身兼三职，但**字段要分开**，
@@ -555,17 +564,47 @@ func (s *Service) PostVoucher(ctx context.Context, id int64, postedBy string) (*
 	return s.Voucher(ctx, id)
 }
 
-// SaveAndPost 保存并立即过账 —— 界面上的「保存并记账」按钮。
+// PostPeriodResult 是一次「过账本期全部草稿」的结果。
+type PostPeriodResult struct {
+	Period string `json:"period"`
+	// Posted 是过账的张数。
+	Posted int `json:"posted"`
+	// Nos 是分配到的凭证号。
+	Nos []string `json:"nos"`
+}
+
+// PostPeriodDrafts 把某一期间的全部草稿凭证过账。
 //
-// 两步在同一处串起来，而不是让界面连调两次：
-// 中间夹一次网络往返，用户可能在中途关窗口，
-// 结果留下一张谁也不知道为什么存在的草稿。
-func (s *Service) SaveAndPost(ctx context.Context, in VoucherInput, postedBy string) (*VoucherDetail, error) {
-	d, err := s.SaveVoucher(ctx, in)
+// ★ 结账（Close）内部就用它，界面上没有单独的按钮。
+//
+// 之所以还导出：命令行与测试需要「把这一期记进账」而不结账
+// （结账还会结转损益、关期间）。**不要**拿它做一条给用户走的旁路 ——
+// 用户能随时点「过账」的话，「凭证号连续」「期间完整」就又变回
+// 靠人自觉的事了。
+func (s *Service) PostPeriodDrafts(ctx context.Context, k period.Key,
+	postedBy string) (*PostPeriodResult, error) {
+	if strings.TrimSpace(postedBy) == "" {
+		return nil, errors.New("请填写记账人 —— 记账凭证需要有记账签章")
+	}
+	if !k.Valid() {
+		return nil, fmt.Errorf("会计期间 %04d-%02d 非法", k.Year, k.Month)
+	}
+	res, err := s.db.Vouchers().PostPeriodDrafts(ctx, k, strings.TrimSpace(postedBy), time.Now())
 	if err != nil {
 		return nil, err
 	}
-	return s.PostVoucher(ctx, d.ID, postedBy)
+	if res.Posted > 0 {
+		s.recordAudit(ctx, AuditEvent{
+			Action: audit.ActionVoucherPost, Summary: fmt.Sprintf("过账 %s 全部草稿", k),
+			Entity: "period", EntityID: k.String(), Operator: strings.TrimSpace(postedBy),
+			Detail: map[string]any{
+				"期间": k.String(), "张数": res.Posted, "凭证号": res.Nos,
+			},
+		})
+	}
+	return &PostPeriodResult{
+		Period: k.String(), Posted: res.Posted, Nos: nonNilSlice(res.Nos),
+	}, nil
 }
 
 // ReverseVoucher 红字冲销一张已过账凭证。

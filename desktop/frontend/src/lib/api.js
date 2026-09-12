@@ -226,8 +226,6 @@ export const api = {
   voucherDetail: (id) => call(A().VoucherDetail, id),
   voucherMetaInfo: () => call(A().VoucherMetaInfo),
   saveVoucher: (req) => call(A().SaveVoucher, req),
-  saveAndPost: (req) => call(A().SaveAndPost, req),
-  postVoucher: (id, by) => call(A().PostVoucher, id, by),
   deleteVoucher: (id) => call(A().DeleteVoucher, id),
   reverseVoucher: (req) => call(A().ReverseVoucher, req),
   checkVoucher: (req) => call(A().CheckVoucher, req),
@@ -413,6 +411,17 @@ const mockBook = {
   },
 }
 
+/**
+ * DRAFT_HINT 是「凭证先存草稿、过账只在账期结算」这件事的统一说明。
+ *
+ * ★ 各模块（工资、报销、发票、银行）都有「生成凭证」这个动作，
+ * 而生出来的**是草稿**。这句话必须跟着提示一起出现，
+ * 否则用户看到「已生成凭证」会以为账上已经有了。
+ */
+export const DRAFT_HINT =
+  '凭证是草稿：不占凭证号、不进总账。到「账期管理」结账时，' +
+  '本期草稿会统一过账（自动分配凭证号），那时才真正进账。'
+
 // 导出给测试用：假实现必须与真实现遵守同一份契约，
 // 所以它需要被测试盯着（frontend/test/api.test.mjs）。
 export const mockApp = {
@@ -492,13 +501,14 @@ export const mockApp = {
     summary: '2025-01 体检通过（6 项检查，0 项提示）',
     items: [
       { key: 'trial_balance', title: '试算平衡', level: 'ok', detail: '借方合计 372,100.00 = 贷方合计 372,100.00', count: 0 },
-      { key: 'draft_vouchers', title: '存在草稿凭证', level: 'warn', detail: '本期有 2 张草稿凭证尚未过账', count: 2 },
+      { key: 'draft_vouchers', title: '本期草稿将在结账时过账', level: 'ok', detail: '本期有 2 张草稿凭证，结账时会先全部过账（自动分配凭证号）再结转损益', count: 2 },
       { key: 'voucher_sequence', title: '凭证字号连续', level: 'ok', detail: '', count: 0 },
       { key: 'balance_sheet', title: '资产负债表勾稽', level: 'ok', detail: '资产总计 = 负债和所有者权益总计', count: 0 },
       { key: 'negative_cash', title: '现金及银行存款无贷方余额', level: 'ok', detail: '', count: 0 },
       { key: 'contact_direction', title: '往来余额方向正常', level: 'ok', detail: '', count: 0 },
     ],
-    errors: [], warnings: [{ key: 'draft_vouchers', title: '存在草稿凭证', level: 'warn', detail: '本期有 2 张草稿凭证尚未过账', count: 2 }],
+    errors: [],
+    warnings: [],
   }),
   PreviewClose: async () => ({
     period: '2025-03',
@@ -507,6 +517,7 @@ export const mockApp = {
       { key: 'close_year', title: '结转本年利润', detail: '非年度末期间，年末结账时处理', done: false, skipped: true },
     ],
     income: 15000000, expense: 4890000, profit: 10110000,
+    draftCount: 2, draftSamples: ['2025-03-28 买打印机', '2025-03-30 计提折旧'],
     entries: [
       { accountCode: '5001', summary: '结转损益 2025年03月', debit: 15000000, credit: 0, auxDesc: '' },
       { accountCode: '560201', summary: '结转损益 2025年03月', debit: 0, credit: 4800000, auxDesc: '部门#1' },
@@ -515,7 +526,7 @@ export const mockApp = {
     ],
     health: null,
   }),
-  Close: async () => ({ period: '2025-03', voucherNo: '转-2025-03-0001', voucherId: 16, voucherCreated: true, summary: '2025年03月：收入 150,000.00，费用 48,900.00，利润 101,100.00' }),
+  Close: async () => ({ period: '2025-03', voucherNo: '转-2025-03-0001', voucherId: 16, voucherCreated: true, postedDrafts: 2, postedNos: ['记-2025-03-0007', '记-2025-03-0008'], summary: '2025年03月：收入 150,000.00，费用 48,900.00，利润 101,100.00' }),
   Reopen: async () => ({ period: '2025-03', reversed: ['转-2025-03-0001'], voucherIds: [16] }),
   Vouchers: async () => [
     { id: 1, no: '记-2025-03-0001', word: '记', date: '2025-03-05', remark: '收回货款', status: 'posted', statusLabel: '已记账', attachCount: 1, amount: 10600000, source: 'bank', sourceLabel: '银行流水', createdByAi: false, createdBy: '李会计', postedBy: '王主管', lines: 2 },
@@ -552,8 +563,6 @@ export const mockApp = {
     currentPeriod: '2025-01', today: '2025-03-11',
   }),
   SaveVoucher: async () => ({ id: 9, no: '', status: 'draft', statusLabel: '草稿' }),
-  SaveAndPost: async () => ({ id: 9, no: '记-2025-03-0009', status: 'posted', statusLabel: '已记账' }),
-  PostVoucher: async () => ({ id: 9, no: '记-2025-03-0009', status: 'posted' }),
   DeleteVoucher: async () => null,
   ReverseVoucher: async () => ({ id: 10, no: '记-2025-03-0010' }),
   CheckVoucher: async () => ({ ok: true, message: '校验通过：2 条分录，借 106,000.00 = 贷 106,000.00，期间 2025-03' }),

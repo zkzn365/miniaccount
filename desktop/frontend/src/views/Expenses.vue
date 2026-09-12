@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import {
   Plus, Save, Trash2, CheckCircle2, XCircle, FileCheck2, RefreshCw, Info,
 } from 'lucide-vue-next'
-import { api, notify } from '@/lib/api'
+import { api, notify, DRAFT_HINT } from '@/lib/api'
 import { bookkeeper, loadBookkeeper, rememberBookkeeper } from '@/lib/operator'
 import { fmtMoney, parseYuanToCents } from '@/lib/format'
 import Card from '@/components/ui/Card.vue'
@@ -148,7 +148,7 @@ async function post(row) {
   const r = await api.postClaim({ id: row.id, postingBy: operator.value.trim() })
   busy.value = false
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
-  notify(`已生成凭证 ${r.data.voucherNo}`, 'success')
+  notify(`已生成凭证（${r.data.voucherLabel || r.data.voucherNo}）`, 'success', DRAFT_HINT)
   await load()
 }
 
@@ -170,7 +170,7 @@ const statusTone = (s) =>
         <option value="draft">草稿</option>
         <option value="approved">已审批</option>
         <option value="paid">已付款</option>
-        <option value="posted">已记账</option>
+        <option value="posted">已生成凭证</option>
         <option value="rejected">已驳回</option>
       </select>
 
@@ -189,7 +189,7 @@ const statusTone = (s) =>
         <CardTitle>差旅与费用报销</CardTitle>
         <CardDescription>
           流程：草稿 → 提交审批 → 审批通过 → 生成凭证。
-          审批通过前不能记账 —— 这是内控的基本要求。
+          审批通过前不能生成凭证 —— 这是内控的基本要求。
         </CardDescription>
       </CardHeader>
       <CardContent class="px-0">
@@ -226,7 +226,9 @@ const statusTone = (s) =>
               <td class="num px-3 py-1.5 font-medium">{{ fmtMoney(r.totalAmount) }}</td>
               <td class="px-3 py-1.5"><Badge :variant="statusTone(r.status)">{{ r.statusLabel }}</Badge></td>
               <td class="px-3 py-1.5">
-                <span v-if="r.voucherNo" class="font-mono text-xs text-[var(--profit)]">{{ r.voucherNo }}</span>
+                <span v-if="r.voucherId" class="font-mono text-xs text-[var(--warn)]">
+                  {{ r.voucherLabel || r.voucherNo || '草稿' }}
+                </span>
                 <span v-else class="text-xs text-muted-foreground">—</span>
               </td>
               <td class="px-3 py-1.5">
@@ -236,7 +238,7 @@ const statusTone = (s) =>
                     <CheckCircle2 /> 审批
                   </Button>
                   <Button v-if="r.canPost" variant="ghost" size="sm" @click="post(r)">
-                    <FileCheck2 /> 记账
+                    <FileCheck2 /> 生成凭证
                   </Button>
                 </div>
               </td>

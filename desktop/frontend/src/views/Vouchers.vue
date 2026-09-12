@@ -2,10 +2,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  Plus, Search, RefreshCw, Trash2, CheckCircle2, Undo2, FileText,
+  Plus, Search, RefreshCw, Trash2, Undo2, FileText,
   Sparkles, Landmark, Paperclip, Pencil,
 } from 'lucide-vue-next'
-import { api, notify } from '@/lib/api'
+import { api, notify, DRAFT_HINT } from '@/lib/api'
 import { bookkeeper, loadBookkeeper, rememberBookkeeper } from '@/lib/operator'
 import { fmtMoney } from '@/lib/format'
 import Card from '@/components/ui/Card.vue'
@@ -20,6 +20,11 @@ import VoucherEditor from '@/components/VoucherEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
+
+// ★ 过账只发生在账期结算，凭证页上没有任何「记账」按钮。
+//
+// 这条规则要跟用户说清楚（DRAFT_HINT 见 lib/api.js），
+// 否则他会一直找那个按钮，或者以为草稿已经进账了。
 
 const rows = ref([])
 const periods = ref([])
@@ -102,17 +107,8 @@ async function openDetail(row) {
 
 async function onSaved(saved) {
   editorOpen.value = false
-  notify(saved.status === 'posted'
-    ? `凭证 ${saved.no} 已记账`
-    : '草稿已保存（草稿不占凭证号，可以随时改）', 'success')
-  await load()
-}
-
-async function postDraft(row) {
-  if (!operator.value.trim()) { notify('请先在账期管理里填写操作人（记账签章）', 'warn'); return }
-  const r = await api.postVoucher(row.id, operator.value.trim())
-  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
-  notify(`凭证 ${r.data.no} 已记账`, 'success')
+  notify(`草稿${saved.no ? ' ' + saved.no : ''}已保存`,
+    'success', DRAFT_HINT)
   await load()
 }
 
@@ -177,7 +173,9 @@ const sourceIcon = (s) =>
       </Button>
 
       <div class="ml-auto flex items-center gap-2">
-        <Badge v-if="totals.drafts" variant="warn">{{ totals.drafts }} 张草稿待过账</Badge>
+        <Badge v-if="totals.drafts" variant="warn" :title="DRAFT_HINT">
+          {{ totals.drafts }} 张草稿待过账
+        </Badge>
         <Button @click="newVoucher"><Plus /> 录入凭证</Button>
       </div>
     </div>
@@ -188,7 +186,7 @@ const sourceIcon = (s) =>
         <EmptyState
           v-else-if="rows.length === 0"
           title="这个期间还没有凭证"
-          description="点右上角「录入凭证」开始记账。凭证过账时会自动分配凭证号，草稿不占号。"
+          description="点右上角「录入凭证」开始记账。凭证先存草稿（不占凭证号），到账期结算时统一过账。"
         >
           <Button size="sm" @click="newVoucher"><Plus /> 录入第一张凭证</Button>
         </EmptyState>
@@ -245,12 +243,6 @@ const sourceIcon = (s) =>
                     variant="ghost" size="sm" title="编辑草稿" @click="editVoucher(r)"
                   >
                     <Pencil /> 编辑
-                  </Button>
-                  <Button
-                    v-if="r.status === 'draft'"
-                    variant="ghost" size="sm" title="过账" @click="postDraft(r)"
-                  >
-                    <CheckCircle2 /> 记账
                   </Button>
                   <Button
                     v-if="r.status === 'draft'"

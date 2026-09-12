@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -267,35 +268,138 @@ func TestClosePeriodTwice(t *testing.T) {
 	}
 }
 
-// 草稿凭证只是「提示」，不足以阻断结账 —— 但必须如实出现在体检报告里
-func TestClosePeriodWarnsDrafts(t *testing.T) {
+// ★ 结账要先把本期的草稿**过账**，再算结转计划。
+//
+// 顺序不能颠倒：结转计划是按总账算出来的。草稿还没过账时总账里
+// 根本没有本期这笔费用，算出来的损益必然少一块 —— 而且
+// 「没数据的正确结果」看起来跟「真的没有费用」一模一样，没人看得出来。
+func TestClosePeriodPostsDraftsBeforePlanning(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	seedBook(t, db) // 里面已经有 9 月的一批已过账凭证
+	for m := 1; m <= 8; m++ {
+		closeP(t, db, 2025, m, "王主管")
+	}
+
+	// 一张**草稿**：9 月又付了 2,000 房租（只在草稿里，总账里还没有）
+	deptAdmin := int64(1)
+	dv, err := voucher.New(voucher.WordJi, mustDate("2025-09-28"), "李会计")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []ledger.Entry{
+		{AccountCode: "560210", Summary: "补记 9 月房租",
+			Debit: money100(2000), Aux: ledger.Aux{DeptID: &deptAdmin}},
+		{AccountCode: "1002", Summary: "补记 9 月房租", Credit: money100(2000)},
+	} {
+		if err := dv.AddEntry(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saved, err := db.Vouchers().SaveDraft(ctx, DraftInput{Voucher: dv, CreatedBy: "李会计"})
+	if err != nil {
+		t.Fatalf("存草稿失败: %v", err)
+	}
+
+	// 结账前：体检报告里说清楚「本期草稿会在结账时过账」
+	h, err := db.CheckPeriodHealth(ctx, period.NewKey(2025, 9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, it := range h.Items {
+		if it.Key == "draft_vouchers" {
+			found = true
+			if it.Count != 1 {
+				t.Errorf("草稿数 = %d，期望 1", it.Count)
+			}
+			if it.Level != HealthOK {
+				t.Errorf("草稿是正常状态，不该报警：%s", it.Level)
+			}
+		}
+	}
+	if !found {
+		t.Error("体检报告应当报出本期草稿张数")
+	}
+	if !h.CanClose() {
+		t.Error("草稿不该阻断结账 —— 结账本来就会把它们过账")
+	}
+
+	res, err := db.Closing().ClosePeriod(ctx, CloseInput{
+		Period: period.NewKey(2025, 9), PostingBy: "王主管", At: time.Now()})
+	if err != nil {
+		t.Fatalf("结账失败: %v", err)
+	}
+
+	// 1. 草稿被过账了：有了凭证号、状态是 posted
+	posted, err := db.Vouchers().Get(ctx, saved.VoucherID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if posted.Status != voucher.StatusPosted {
+		t.Errorf("★ 结账应当把本期草稿过账，实际状态 %s", posted.Status)
+	}
+	if posted.No == "" {
+		t.Error("★ 过账后应当分配到凭证号")
+	}
+	if res.PostedDrafts == nil || res.PostedDrafts.Posted != 1 {
+		t.Errorf("结账结果应报出过账张数 1，实际 %+v", res.PostedDrafts)
+	}
+
+	// 2. 结转计划里**包含**这笔草稿的费用 —— 证明先过账、后算计划
+	if res.Plan == nil || res.Plan.Closing == nil {
+		t.Fatal("结账计划为空")
+	}
+	// seedBook 的 9 月费用：办公用品 3,000 + 房租 12,000 + 这张草稿 2,000
+	if got := res.Plan.Closing.TotalExpense; got != money100(17000) {
+		t.Errorf("★ 结转计划的费用 = %s，期望 17,000.00。\n"+
+			"    少的那部分就是草稿里的 2,000 —— 说明结转计划是在草稿过账**之前**算的。",
+			got)
+	}
+
+	// 3. 总账里真的有这笔
+	var n int
+	if err := db.SQL().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM ledger_entry WHERE voucher_id = ?`, saved.VoucherID).
+		Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("总账里应有 2 条该凭证的分录，实际 %d", n)
+	}
+}
+
+// ★ 一张过不了账的草稿必须**指名道姓**地中止结账。
+//
+// 一次结账卡住却不说卡在哪张凭证，用户只能一张张试；
+// 而凭证动辄几十张，试到天亮也找不到。
+func TestClosePeriodAbortsAndNamesBadDraft(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 	seedBook(t, db)
 	for m := 1; m <= 8; m++ {
 		closeP(t, db, 2025, m, "王主管")
 	}
+
+	// 手工插一张**空**草稿（没有任何分录）—— 它一定过不了账
 	newDraftVoucher(t, db, "2025-09-30")
 
-	res, err := db.Closing().ClosePeriod(ctx, CloseInput{
+	_, err := db.Closing().ClosePeriod(ctx, CloseInput{
 		Period: period.NewKey(2025, 9), PostingBy: "王主管", At: time.Now()})
-	if err != nil {
-		t.Fatalf("草稿只是警告，不应阻断结账: %v", err)
+	if err == nil {
+		t.Fatal("有草稿过不了账时，结账必须中止")
 	}
-	if res.Health == nil {
-		t.Fatal("结账结果应带回体检报告")
+	msg := err.Error()
+	if !strings.Contains(msg, "草稿 #") && !strings.Contains(msg, "第 1 张") {
+		t.Errorf("要指出是哪一张凭证：%v", err)
 	}
-	var found bool
-	for _, it := range res.Health.Warnings() {
-		if it.Key == "draft_vouchers" {
-			found = true
-			if it.Count != 1 {
-				t.Errorf("草稿数 = %d，期望 1", it.Count)
-			}
-		}
+	if !strings.Contains(msg, "回滚") {
+		t.Errorf("要说清楚整批都没过：%v", err)
 	}
-	if !found {
-		t.Error("体检报告应记录草稿凭证警告")
+
+	// 期间必须还开着 —— 中止就是中止，不能留下半截状态
+	if st := periodStatus(t, db, 2025, 9); st != string(period.StatusOpen) {
+		t.Errorf("结账中止后期间应仍为 open，实际 %s", st)
 	}
 }
 
@@ -749,4 +853,19 @@ func TestBalanceSheetBalancesAfterClosing(t *testing.T) {
 	if got := rawBalance(t, db, "3103", "2025-09-30"); got != money100(-65000) {
 		t.Errorf("本年利润 = %s，期望 -65000.00", got)
 	}
+}
+
+// postDrafts 过账某期间的全部草稿 —— 测试里等价于「结账的第一步」。
+//
+// ★ 本工程只在账期结算时过账，所以任何「模块生成凭证 → 读总账」
+// 的测试都要显式走这一步。少了它，测试读到的是**空总账**：
+// 断言会以「余额 = 0」的形式失败，而那正是「凭证还没过账」的样子。
+func postDrafts(t *testing.T, db *DB, y, m int) *PostPeriodDraftsResult {
+	t.Helper()
+	res, err := db.Vouchers().PostPeriodDrafts(context.Background(),
+		period.NewKey(y, m), "王主管", time.Now())
+	if err != nil {
+		t.Fatalf("过账 %d-%02d 的草稿失败: %v", y, m, err)
+	}
+	return res
 }

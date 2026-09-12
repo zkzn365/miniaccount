@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/base64"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	"miniaccount/internal/domain/money"
+	"miniaccount/internal/domain/period"
 	"miniaccount/internal/service"
 )
 
@@ -167,18 +169,26 @@ func TestVoucherLifecycle(t *testing.T) {
 		t.Errorf("列表应带回分录行数，实际 %d", list[0].Lines)
 	}
 
-	// 记账人不能为空
-	if _, e := a.PostVoucher(d.ID, ""); e == nil {
-		t.Error("缺少记账人应被拒绝")
+	// ★ 界面层没有任何「把一张凭证直接过账」的绑定。
+	//
+	// 这是本工程的硬规则：凭证录完只落草稿，过账只发生在账期结算。
+	// 用反射守着它，比在注释里写一句「不要加回来」有用 ——
+	// 加回来的时候这条测试会红。
+	for _, name := range []string{"SaveAndPost", "PostVoucher"} {
+		if m := reflect.ValueOf(a).MethodByName(name); m.IsValid() {
+			t.Errorf("★ 绑定 %s 又回来了。凭证录完不能直接过账 —— "+
+				"过账只发生在账期结算（CloseBook 内部先过账本期草稿）。", name)
+		}
 	}
 
-	// 过账
-	posted, perr := a.PostVoucher(d.ID, "王主管")
+	// 结算（界面上是结账）之后才过账
+	postPeriodDrafts(t, a, 2025, 1)
+	posted, perr := a.VoucherDetail(d.ID)
 	if f := faultOf(posted, perr); f != nil {
-		t.Fatalf("过账失败: %v", f)
+		t.Fatalf("读凭证失败: %v", f)
 	}
 	if posted.Status != "posted" || posted.No == "" {
-		t.Errorf("过账后应有号: %+v", posted)
+		t.Errorf("结算后应有号: %+v", posted)
 	}
 	if posted.CanEdit {
 		t.Error("已过账不该可编辑")
@@ -212,34 +222,41 @@ func TestVoucherLifecycle(t *testing.T) {
 	}
 }
 
-// 保存并记账：一步完成，草稿不会残留
-func TestSaveAndPostBinding(t *testing.T) {
+// ★ 存凭证只会存下**一张草稿**：不占号、不进总账。
+//
+// 原来这里测的是「保存并记账一步完成」。那个绑定已经删掉了 ——
+// 它让「过账只在结算时」名存实亡。现在要守的是反面：
+// 存完就是草稿，而且账上不许多出任何东西。
+func TestSaveVoucherOnlyCreatesDraft(t *testing.T) {
 	a := bookWithAccounts(t)
 	sh := mustContactDesktop(t, a, "shareholder", "张三")
 
 	req := voucherReq()
 	req.Lines[1].ContactID = &sh
 
-	d, err := a.SaveAndPost(req)
+	d, err := a.SaveVoucher(req)
 	if f := faultOf(d, err); f != nil {
-		t.Fatalf("保存并记账失败: %v", f)
+		t.Fatalf("存凭证失败: %v", f)
 	}
-	if d.Status != "posted" {
-		t.Errorf("状态 = %s，期望 posted", d.Status)
+	if d.Status != "draft" {
+		t.Errorf("状态 = %s，期望 draft", d.Status)
+	}
+	if d.No != "" {
+		t.Errorf("★ 草稿不该有凭证号，实际 %q", d.No)
+	}
+	if d.PostedBy != "" {
+		t.Errorf("★ 还没过账就不该有记账签章，实际 %q", d.PostedBy)
 	}
 
 	list, _ := a.Vouchers(VoucherQueryRequest{Year: 2025, Month: 1})
 	if len(list) != 1 {
-		t.Fatalf("账上只应有一张凭证，实际 %d 张 —— "+
-			"「保存并记账」如果先插草稿再插一张过账的，就会变成两张", len(list))
+		t.Fatalf("账上只应有一张凭证，实际 %d 张", len(list))
 	}
 
-	// 记账人为空要拒绝
-	req2 := voucherReq()
-	req2.PostedBy = ""
-	req2.Lines[1].ContactID = &sh
-	if _, e := a.SaveAndPost(req2); e == nil {
-		t.Error("缺少记账人应被拒绝")
+	// 总账里必须还是空的 —— 这正是「录完凭证不算记账」
+	led, _ := a.LedgerDetail(LedgerRequest{AccountPrefix: "1002"})
+	if led != nil && len(led.Rows) != 0 {
+		t.Errorf("★ 还没结算，明细账就该是空的，实际 %d 行", len(led.Rows))
 	}
 }
 
@@ -414,8 +431,8 @@ func TestVoucherBindingsReturnNilInterface(t *testing.T) {
 	add("ContactOptions", e)
 	_, e = a.CheckVoucher(req)
 	add("CheckVoucher", e)
-	_, e = a.PostVoucher(d.ID, "王主管")
-	add("PostVoucher", e)
+	_, e = a.PreviewClose(PeriodRequest{Year: 2025, Month: 1})
+	add("PreviewClose", e)
 
 	for _, c := range checks {
 		if c.e != nil {
@@ -440,3 +457,20 @@ func mustContactDesktop(t *testing.T, a *App, kind, name string) int64 {
 }
 
 var _ = errors.Is
+
+// postPeriodDrafts 把某期的草稿全部过账（测试用）。
+//
+// ★ 界面上没有这个动作：过账只发生在账期结算，走 CloseBook。
+// 但很多测试要的是「账上有一张已过账的凭证」，而不是「把这一期结掉」——
+// 走 CloseBook 会顺带结转损益、关期间，把测试的前提搞乱。
+func postPeriodDrafts(t *testing.T, a *App, year, month int) {
+	t.Helper()
+	svc, f := a.book()
+	if f != nil {
+		t.Fatalf("账套不可用: %v", f)
+	}
+	if _, err := svc.PostPeriodDrafts(a.context(),
+		period.NewKey(year, month), "王主管"); err != nil {
+		t.Fatalf("过账 %d-%02d 的草稿失败: %v", year, month, err)
+	}
+}

@@ -396,6 +396,11 @@ func (p *demoPoster) tryPost(date, remark string, lines ...line) (int, error) {
 			return 0, err
 		}
 	}
+	// ★ 演示账套直接过账，不走「先草稿、结账时再记」那条路。
+	//
+	// 演示账套模拟的是**一本已经结完账的历史账**：用户点开报表就该看到
+	// 数字。若演示数据也全是草稿，报表页会空空如也，「先生成演示账套
+	// 看看」这个入口就失去了意义。
 	if _, err := p.svc.DB().Vouchers().Post(ctx, sqlite.PostInput{
 		Voucher: vc, Accounts: p.accIDs, PostingBy: "王主管", At: time.Now(),
 	}); err != nil {

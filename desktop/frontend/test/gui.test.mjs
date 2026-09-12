@@ -677,6 +677,110 @@ test('★ 停用 / 启用能来回切（否则停用了就再也开不回来）'
 // 这类 bug 的共同点是：按钮点得动、弹窗也正常，只有最后那一下才炸。
 // 所以这里必须真的点下去，不能只看页面渲染出来了没有。
 
+// ★ 凭证录完只是草稿；过账发生在账期结算。
+//
+// 这是用户点名要的规则：「不能做完凭证就过账，账期结算的时候才能过账」。
+// 守它要守三处，缺一处这条规则就会慢慢漏掉：
+//
+//   1. 编辑器里**没有**「保存并记账」这个按钮；
+//   2. 存完账上还是空的（明细账里查不到它）；
+//   3. 结账之后它才进账，而且结账提示要报出「过了几张草稿」。
+test('★ 凭证录完只是草稿，结账时才过账', async () => {
+  // 1. 编辑器里不该有直接过账的按钮
+  await page.goto('/vouchers')
+  await settle(80)
+  await page.click('录入凭证')
+  await settle(60)
+  const labels = [...win.document.body.querySelectorAll('button')]
+    .map((b) => b.textContent.replace(/\s+/g, ''))
+  assert.ok(!labels.some((t) => t.includes('保存并记账')),
+    `★ 凭证编辑器里还有「保存并记账」—— 做完凭证就能过账，规则就破了。实际按钮：${labels}`)
+  assert.ok(labels.some((t) => t.includes('保存草稿')),
+    `编辑器里找不到「保存草稿」：${labels}`)
+  await page.click('取消')
+  await settle(30)
+
+  // 界面这一层也拿不到「保存并过账」/「单张过账」的口子
+  assert.equal(bundle.api.api.saveAndPost, undefined,
+    '★ api.saveAndPost 还在 —— 界面上随时能把一张刚敲完的凭证记进总账')
+  assert.equal(bundle.api.api.postVoucher, undefined,
+    '★ api.postVoucher 还在 —— 凭证列表里又能逐张过账了')
+
+  // 2. 在一个**还开着**的期间里录一张凭证
+  const per = await bundle.api.api.periods()
+  const openOne = (per.data.periods ?? []).find((p) => p.status === 'open')
+  assert.ok(openOne, '没有可记账的期间')
+  const day = `${openOne.year}-${String(openOne.month).padStart(2, '0')}-15`
+
+  // 科目：只用不要求辅助核算的可记账明细科目，别把这条测试
+  // 变成「辅助核算配没配对」的测试
+  const opts = (await bundle.api.api.accountOptions()).data ?? []
+  const free = opts.filter((a) => !(a.auxTypes ?? []).length)
+  const debitAcc = free.find((a) => a.direction === '借')
+  const creditAcc = free.find((a) => a.direction === '贷')
+  assert.ok(debitAcc && creditAcc && debitAcc.code !== creditAcc.code,
+    `找不到两个不要求辅助核算的科目：${JSON.stringify(free.slice(0, 6))}`)
+
+  const saved = await bundle.api.api.saveVoucher({
+    id: 0, word: '记', date: day, remark: '草稿规则回归测试', createdBy: '李会计',
+    lines: [
+      { accountCode: debitAcc.code, summary: '草稿规则回归测试', debitYuan: '100.00', creditYuan: '' },
+      { accountCode: creditAcc.code, summary: '草稿规则回归测试', debitYuan: '', creditYuan: '100.00' },
+    ],
+  })
+  assert.equal(saved.ok, true, saved.fault?.message)
+  assert.equal(saved.data.status, 'draft', `存下来应当是草稿，实际 ${saved.data.status}`)
+  assert.equal(saved.data.no, '', `★ 草稿不该有凭证号，实际 ${saved.data.no}`)
+
+  // ★ 账上必须还是空的 —— 这一条是整条规则的核心
+  const led0 = await bundle.api.api.ledgerDetail({ accountPrefix: debitAcc.code })
+  assert.equal(led0.ok, true, led0.fault?.message)
+  assert.equal((led0.data.rows ?? []).length, 0,
+    `★ 还没结算，明细账里就有这张凭证了：${JSON.stringify(led0.data.rows?.slice(0, 2))}`)
+
+  // 页面上它显示的是草稿
+  await page.goto('/vouchers')
+  await settle(80)
+  assert.ok(page.text().includes('草稿'), `凭证列表里没标出草稿：${page.text().slice(0, 200)}`)
+
+  // 3. 结账 —— 过账就在这一步
+  await page.goto('/periods')
+  await settle(80)
+  await page.type(page.input('input[placeholder="结账 / 反结账时签名用"]'), '回归测试员')
+  await settle(30)
+  for (const n of [...bundle.api.notices.items]) bundle.api.dismiss(n.id)
+  await page.click('结账')
+  await settle(150)
+
+  // 预览要把「结账会先过账几张草稿」说在前面
+  const pv = await bundle.api.api.previewClose({ year: openOne.year, month: openOne.month })
+  assert.equal(pv.ok, true, pv.fault?.message)
+  assert.ok(pv.data.draftCount >= 1,
+    `预览没报出待过账的草稿张数：${JSON.stringify({ draftCount: pv.data.draftCount })}`)
+
+  await page.click('确认结账')
+  await settle(200)
+  const toast = bundle.api.notices.items.map((n) => n.message).join(' | ')
+  assert.ok(/过账本期 \d+ 张草稿/.test(toast),
+    `结账提示没说过账了几张草稿：${toast || '（没有提示）'}`)
+
+  // ★ 结算之后它才进账
+  const led1 = await bundle.api.api.ledgerDetail({ accountPrefix: debitAcc.code })
+  assert.equal((led1.data.rows ?? []).length, 1,
+    `★ 结账之后明细账里应当有这 1 行，实际 ${(led1.data.rows ?? []).length} 行`)
+  const detail = await bundle.api.api.voucherDetail(saved.data.id)
+  assert.equal(detail.data.status, 'posted', '结算后凭证应当是已过账')
+  assert.ok(detail.data.no, '结算后应当分配到凭证号')
+
+  // 收尾：反结账回来，别影响后面的测试
+  await page.goto('/periods')
+  await settle(80)
+  await page.click('反结账')
+  await settle(120)
+  await page.click('确认反结账')
+  await settle(150)
+})
+
 test('★ 结账真的能结掉（不是只把弹窗打开）', async () => {
   await page.goto('/periods')
   await settle(80)

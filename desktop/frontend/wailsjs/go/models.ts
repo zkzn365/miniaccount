@@ -2774,6 +2774,7 @@ export namespace service {
 	    remark: string;
 	    items: ClaimItemView[];
 	    voucherNo: string;
+	    voucherLabel: string;
 	    canEdit: boolean;
 	    canApprove: boolean;
 	    canPost: boolean;
@@ -2806,6 +2807,7 @@ export namespace service {
 	        this.remark = source["remark"];
 	        this.items = this.convertValues(source["items"], ClaimItemView);
 	        this.voucherNo = source["voucherNo"];
+	        this.voucherLabel = source["voucherLabel"];
 	        this.canEdit = source["canEdit"];
 	        this.canApprove = source["canApprove"];
 	        this.canPost = source["canPost"];
@@ -2837,6 +2839,8 @@ export namespace service {
 	    voucherCreated: boolean;
 	    summary: string;
 	    health?: HealthInfo;
+	    postedDrafts: number;
+	    postedNos: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new CloseResult(source);
@@ -2850,6 +2854,8 @@ export namespace service {
 	        this.voucherCreated = source["voucherCreated"];
 	        this.summary = source["summary"];
 	        this.health = this.convertValues(source["health"], HealthInfo);
+	        this.postedDrafts = source["postedDrafts"];
+	        this.postedNos = source["postedNos"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -2900,6 +2906,8 @@ export namespace service {
 	    expense: number;
 	    profit: number;
 	    entries: ClosingEntry[];
+	    draftCount: number;
+	    draftSamples: string[];
 	    health?: HealthInfo;
 	
 	    static createFrom(source: any = {}) {
@@ -2916,6 +2924,8 @@ export namespace service {
 	        this.expense = source["expense"];
 	        this.profit = source["profit"];
 	        this.entries = this.convertValues(source["entries"], ClosingEntry);
+	        this.draftCount = source["draftCount"];
+	        this.draftSamples = source["draftSamples"];
 	        this.health = this.convertValues(source["health"], HealthInfo);
 	    }
 	
@@ -3540,6 +3550,7 @@ export namespace service {
 	    contactId?: number;
 	    remark: string;
 	    voucherNo: string;
+	    voucherLabel: string;
 	    posted: boolean;
 	    attachmentCount: number;
 	
@@ -3572,6 +3583,7 @@ export namespace service {
 	        this.contactId = source["contactId"];
 	        this.remark = source["remark"];
 	        this.voucherNo = source["voucherNo"];
+	        this.voucherLabel = source["voucherLabel"];
 	        this.posted = source["posted"];
 	        this.attachmentCount = source["attachmentCount"];
 	    }
@@ -3656,7 +3668,9 @@ export namespace service {
 	    totalSiCompany: number;
 	    totalNet: number;
 	    accrualVoucherNo: string;
+	    accrualVoucherLabel: string;
 	    paymentVoucherNo: string;
+	    paymentVoucherLabel: string;
 	    canConfirm: boolean;
 	    canPost: boolean;
 	
@@ -3679,7 +3693,9 @@ export namespace service {
 	        this.totalSiCompany = source["totalSiCompany"];
 	        this.totalNet = source["totalNet"];
 	        this.accrualVoucherNo = source["accrualVoucherNo"];
+	        this.accrualVoucherLabel = source["accrualVoucherLabel"];
 	        this.paymentVoucherNo = source["paymentVoucherNo"];
+	        this.paymentVoucherLabel = source["paymentVoucherLabel"];
 	        this.canConfirm = source["canConfirm"];
 	        this.canPost = source["canPost"];
 	    }

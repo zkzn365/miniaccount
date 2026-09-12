@@ -247,20 +247,19 @@ func TestLedgerDetailCarriesContraAccount(t *testing.T) {
 		t.Fatal(f)
 	}
 	cid := contactIDOf(t, a)
-	saved, f := a.SaveVoucher(VoucherRequest{
+	if _, f := a.SaveVoucher(VoucherRequest{
 		Word: "记", Date: "2025-03-05", Remark: "收到货款", CreatedBy: "李会计",
 		Lines: []VoucherLineRequest{
 			{AccountCode: "1002", Summary: "收到货款", DebitYuan: "1060.00"},
 			{AccountCode: "1122", Summary: "收到货款", CreditYuan: "1000.00", ContactID: &cid},
 			{AccountCode: "5001", Summary: "确认收入", CreditYuan: "60.00"},
 		},
-	})
-	if f != nil {
+	}); f != nil {
 		t.Fatalf("存凭证失败: %v", f)
 	}
-	if _, f := a.PostVoucher(saved.ID, "王主管"); f != nil {
-		t.Fatalf("过账失败: %v", f)
-	}
+	// 附件测试要的是「账上有一张已过账的凭证」；过账只发生在账期结算，
+	// 这里显式走一次该期间的过账（等价于结账的第一步）。
+	postPeriodDrafts(t, a, 2025, 3)
 
 	r, f := a.LedgerDetail(LedgerRequest{AccountPrefix: "1002"})
 	if f != nil {

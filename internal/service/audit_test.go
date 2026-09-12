@@ -151,16 +151,14 @@ func TestAuditRecordsPeriodReopenWithDates(t *testing.T) {
 	ctx := context.Background()
 	k := periodKey(2025, 1)
 
-	// 先造一张凭证并结账
-	if _, err := svc.SaveAndPost(ctx, service.VoucherInput{
+	// 先存一张草稿凭证，再结账 —— 结账会先把本期的草稿过账
+	mustSave(t, svc, service.VoucherInput{
 		Word: "记", Date: "2025-01-10", Remark: "销售", CreatedBy: "李会计",
 		Lines: []service.VoucherLineInput{
 			{AccountCode: "1002", Summary: "销售", Debit: 100000},
 			{AccountCode: "5001", Summary: "销售", Credit: 100000},
 		},
-	}, "王主管"); err != nil {
-		t.Fatalf("记账失败: %v", err)
-	}
+	})
 	if _, err := svc.Close(ctx, k, "王主管"); err != nil {
 		t.Fatalf("结账失败: %v", err)
 	}

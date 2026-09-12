@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { Plus, Save, FileCheck2, Info, RefreshCw } from 'lucide-vue-next'
-import { api, notify } from '@/lib/api'
+import { api, notify, DRAFT_HINT } from '@/lib/api'
 import { bookkeeper, loadBookkeeper, rememberBookkeeper } from '@/lib/operator'
 import { fmtMoney, parseYuanToCents } from '@/lib/format'
 import Card from '@/components/ui/Card.vue'
@@ -118,7 +118,7 @@ async function post(row) {
   })
   busy.value = false
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
-  notify(`已生成凭证 ${r.data.voucherNo}`, 'success')
+  notify(`已生成凭证（${r.data.voucherLabel || r.data.voucherNo}）`, 'success', DRAFT_HINT)
   await load()
 }
 
@@ -222,7 +222,9 @@ const kindTone = (k) => (k === 'special' ? 'default' : 'muted')
                 <td class="num px-3 py-1.5">{{ fmtMoney(r.taxAmount) }}</td>
                 <td class="num px-3 py-1.5 font-medium">{{ fmtMoney(r.totalAmount) }}</td>
                 <td class="px-3 py-1.5">
-                  <span v-if="r.posted" class="font-mono text-xs text-[var(--profit)]">{{ r.voucherNo }}</span>
+                  <span v-if="r.posted" class="font-mono text-xs text-[var(--warn)]">
+                    {{ r.voucherLabel || r.voucherNo || '草稿' }}
+                  </span>
                   <Badge v-else variant="warn">未入账</Badge>
                 </td>
                 <td class="px-3 py-1.5">

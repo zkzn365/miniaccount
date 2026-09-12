@@ -465,6 +465,11 @@ func (db *DB) CheckPeriodHealth(ctx context.Context, k period.Key) (*PeriodHealt
 	}
 
 	// 2. 草稿凭证
+	//
+	// ★ 草稿不再是「问题」。凭证录完只落草稿、到账期结算时才统一过账
+	// （见 VoucherRepo.PostPeriodDraftsInTx），所以本期的草稿是**正常的**，
+	// 结账会顺手把它们过掉。这里只把张数说清楚，让用户在预览里
+	// 提前看到「结账会多出 12 张凭证」，而不是点完才发现。
 	var drafts int
 	if err := db.sql.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM voucher
@@ -473,10 +478,11 @@ func (db *DB) CheckPeriodHealth(ctx context.Context, k period.Key) (*PeriodHealt
 		return nil, translateErr(err)
 	}
 	if drafts == 0 {
-		add(HealthItem{Key: "draft_vouchers", Title: "无草稿凭证", Level: HealthOK})
+		add(HealthItem{Key: "draft_vouchers", Title: "本期无草稿凭证", Level: HealthOK})
 	} else {
-		add(HealthItem{Key: "draft_vouchers", Title: "存在草稿凭证", Level: HealthWarn,
-			Count: drafts, Detail: fmt.Sprintf("本期有 %d 张草稿凭证尚未过账", drafts)})
+		add(HealthItem{Key: "draft_vouchers", Title: "本期草稿将在结账时过账",
+			Level: HealthOK, Count: drafts,
+			Detail: fmt.Sprintf("本期有 %d 张草稿凭证，结账时会先全部过账（自动分配凭证号）再结转损益", drafts)})
 	}
 
 	// 3. 凭证字号连续性

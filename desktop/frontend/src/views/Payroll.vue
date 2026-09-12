@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import {
   Plus, Calculator, CheckCircle2, Pencil, Info, Download, Trash2,
 } from 'lucide-vue-next'
-import { api, notify } from '@/lib/api'
+import { api, notify, DRAFT_HINT } from '@/lib/api'
 import { bookkeeper, loadBookkeeper, rememberBookkeeper } from '@/lib/operator'
 import { fmtMoney } from '@/lib/format'
 import Card from '@/components/ui/Card.vue'
@@ -162,7 +162,7 @@ async function doBuild() {
   detailOpen.value = true
   buildOpen.value = false
   if (buildForm.value.save) {
-    notify('工资单已生成（草稿），请核对后再记账', 'success')
+    notify('工资单已生成（草稿），请核对后再生成凭证', 'success')
     await load()
   }
 }
@@ -180,7 +180,8 @@ async function postRun() {
   const r = await api.postPayroll(detail.value.id, operator.value.trim())
   busy.value = false
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
-  notify(`工资单已记账，生成计提与发放两张凭证`, 'success')
+  notify('已生成计提与发放两张凭证（草稿）', 'success',
+    '凭证是草稿，不算进账。到「账期管理」结账时会连同本期其他草稿一起过账。')
   detail.value = r.data
   await load()
 }
@@ -248,7 +249,7 @@ const statusTone = (s) => (s === 'posted' ? 'profit' : s === 'confirmed' ? 'defa
           <CardTitle>工资单</CardTitle>
           <CardDescription>
             个税按《个人所得税扣缴申报管理办法》的<b>累计预扣预缴法</b>计算。
-            工资单先生成为草稿，核对无误后再记账。
+            工资单先生成为草稿，核对无误后再生成凭证。
           </CardDescription>
         </CardHeader>
         <CardContent class="px-0">
@@ -482,7 +483,7 @@ const statusTone = (s) => (s === 'posted' ? 'profit' : s === 'confirmed' ? 'defa
         </div>
         <label class="flex items-center gap-2 text-sm">
           <input v-model="buildForm.onlyPosted" type="checkbox" class="size-4 rounded border-input" />
-          累计数只统计已确认/已过账的历史工资单
+          累计数只统计已确认/已生成凭证的历史工资单
           <span class="text-xs text-muted-foreground">（默认含草稿，更保险）</span>
         </label>
         <label class="flex items-center gap-2 text-sm">
@@ -583,13 +584,13 @@ const statusTone = (s) => (s === 'posted' ? 'profit' : s === 'confirmed' ? 'defa
 
       <template #footer>
         <Input v-model="operator"
-                 @change="rememberBookkeeper(operator)" class="mr-auto h-8 w-32" placeholder="记账人" />
+                 @change="rememberBookkeeper(operator)" class="mr-auto h-8 w-32" placeholder="操作人" />
         <Button variant="ghost" @click="detailOpen = false">关闭</Button>
         <Button v-if="detail?.id" variant="outline" @click="exportPayroll">
           <Download /> 导出 Excel
         </Button>
         <Button v-if="detail?.canPost && detail?.id" :disabled="busy" @click="postRun">
-          <CheckCircle2 /> 记账
+          <CheckCircle2 /> 生成凭证
         </Button>
       </template>
     </Modal>

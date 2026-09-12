@@ -115,7 +115,7 @@ type Status string
 const (
 	StatusPending  Status = "pending"  // 未认证
 	StatusVerified Status = "verified" // 已认证（已在税局勾选确认）
-	StatusBooked   Status = "booked"   // 已入账（已生成/关联凭证）
+	StatusBooked   Status = "booked"   // 已生成凭证（凭证是草稿，过账在账期结算）
 	StatusVoided   Status = "voided"   // 已作废
 )
 
@@ -127,7 +127,8 @@ func (s Status) Label() string {
 	case StatusVerified:
 		return "已认证"
 	case StatusBooked:
-		return "已入账"
+		// 同报销单：只表示凭证已生成，凭证本身还是草稿（过账在账期结算）。
+		return "已生成凭证"
 	case StatusVoided:
 		return "已作废"
 	default:

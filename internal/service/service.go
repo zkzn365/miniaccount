@@ -560,6 +560,14 @@ type ClosingPreview struct {
 	Profit  money.Money `json:"profit"`
 	// Entries 是将会写入的结转分录。
 	Entries []ClosingEntry `json:"entries"`
+	// DraftCount 是本期待过账的草稿凭证张数。
+	//
+	// ★ 账套里唯一的过账时机是结账，所以这张数就是「点确认之后
+	// 账上会多出几张凭证」。不说清楚的话，用户点完结账才发现
+	// 账上凭空多了一批分录。
+	DraftCount int `json:"draftCount"`
+	// DraftSamples 是其中前几张的日期与摘要，供界面展示。
+	DraftSamples []string `json:"draftSamples"`
 	// Health 是体检报告。
 	Health *HealthInfo `json:"health"`
 }
@@ -614,6 +622,12 @@ func (s *Service) PreviewClose(ctx context.Context, k period.Key) (*ClosingPrevi
 			Debit: e.Debit, Credit: e.Credit, AuxDesc: auxDesc(e.Aux),
 		})
 	}
+	n, samples, err := s.db.Vouchers().DraftsOfPeriod(ctx, k)
+	if err != nil {
+		return nil, err
+	}
+	out.DraftCount = n
+	out.DraftSamples = nonNilSlice(samples)
 	return out, nil
 }
 
@@ -626,6 +640,14 @@ type CloseResult struct {
 	VoucherCreated bool        `json:"voucherCreated"`
 	Summary        string      `json:"summary"`
 	Health         *HealthInfo `json:"health"`
+	// PostedDrafts 是本次结账顺带过账的草稿张数。
+	//
+	// ★ 凭证录完只落草稿，过账只发生在结账。这个数要报给用户 ——
+	// 「结账成功了」和「结账成功了，顺便把 12 张草稿记进了账」
+	// 是两件事，后者用户必须知道。
+	PostedDrafts int `json:"postedDrafts"`
+	// PostedNos 是本次过账分配到的凭证号。
+	PostedNos []string `json:"postedNos"`
 }
 
 // Close 执行结账。
@@ -640,6 +662,10 @@ func (s *Service) Close(ctx context.Context, k period.Key, postingBy string) (*C
 		Period: k.String(), VoucherNo: res.VoucherNo,
 		VoucherID: res.VoucherID, VoucherCreated: res.Planned(),
 		Summary: res.Plan.Summary(),
+		PostedNos: nonNilSlice(res.PostedNos()),
+	}
+	if res.PostedDrafts != nil {
+		out.PostedDrafts = res.PostedDrafts.Posted
 	}
 	if res.Health != nil {
 		out.Health = convertHealth(res.Health)

@@ -666,7 +666,14 @@ type PostRunResult struct {
 	PaymentNo        string
 }
 
-// PostRun 为工资单生成**计提**与**发放**两张凭证并过账。
+// PostRun 为工资单生成**计提**与**发放**两张凭证。
+//
+// ★ 生成的是**草稿**凭证，不是已过账凭证。
+//
+// 本工程里过账只发生在账期结算（见 Service.Close →
+// VoucherRepo.PostPeriodDraftsInTx）：工资凭证照样先落草稿，
+// 和手工录入的凭证一起，在结账时统一过账、统一分配凭证号。
+// 所以这里的返回值里 No 是空的 —— 草稿不占号。
 //
 // 用两张凭证而不是一张：计提是费用确认（当月），发放是资金支付
 // （往往在下月）。合成一张会让「当月费用」与「当月银行流水」对不上，
@@ -702,20 +709,15 @@ func (r *PayrollRepo) PostRun(ctx context.Context, runID int64,
 
 	res := &PostRunResult{}
 	err = r.db.WithTx(ctx, func(tx *Tx) error {
-		accIDs, err := r.db.Accounts().IDsByCodeTx(ctx, tx)
-		if err != nil {
-			return err
-		}
-
-		acc, err := r.postPayrollVoucher(ctx, tx, run, accrualEntries, accIDs,
-			postingBy, at, "计提工资")
+		acc, err := r.postPayrollVoucher(ctx, tx, run, accrualEntries,
+			postingBy, "计提工资")
 		if err != nil {
 			return fmt.Errorf("计提凭证: %w", err)
 		}
 		res.AccrualVoucherID, res.AccrualNo = acc.VoucherID, acc.No
 
-		pay, err := r.postPayrollVoucher(ctx, tx, run, paymentEntries, accIDs,
-			postingBy, at, "发放工资")
+		pay, err := r.postPayrollVoucher(ctx, tx, run, paymentEntries,
+			postingBy, "发放工资")
 		if err != nil {
 			return fmt.Errorf("发放凭证: %w", err)
 		}
@@ -733,9 +735,14 @@ func (r *PayrollRepo) PostRun(ctx context.Context, runID int64,
 	return res, nil
 }
 
+// postPayrollVoucher 把一张工资凭证**存成草稿**。
+//
+// 名字里的 post 是历史包袱（原来这里直接过账）；现在它只落草稿，
+// 过账由账期结算统一做。真正的过账入口只有一个：
+// VoucherRepo.PostPeriodDraftsInTx。
 func (r *PayrollRepo) postPayrollVoucher(ctx context.Context, tx *Tx,
-	run *payroll.Run, entries []payroll.Entry, accIDs map[string]int64,
-	postingBy string, at time.Time, remark string) (*PostedVoucher, error) {
+	run *payroll.Run, entries []payroll.Entry,
+	postingBy string, remark string) (*PostedVoucher, error) {
 
 	// 工资凭证的日期取该期间最后一天：工资是整月业务，用月末日期
 	// 才能落在正确的会计期间内（也避免月初日期落到上一个月）。
@@ -770,13 +777,13 @@ func (r *PayrollRepo) postPayrollVoucher(ctx context.Context, tx *Tx,
 		}
 	}
 
-	out, err := r.db.Vouchers().PostInTx(ctx, tx, PostInput{
-		Voucher: vc, Accounts: accIDs, PostingBy: postingBy, At: at,
+	out, err := r.db.Vouchers().SaveDraftInTx(ctx, tx, DraftInput{
+		Voucher: vc, CreatedBy: postingBy, Generated: true,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &PostedVoucher{VoucherID: out.VoucherID, No: out.No}, nil
+	return &PostedVoucher{VoucherID: out.VoucherID, No: ""}, nil
 }
 
 // loadRun 从数据库读回一张完整工资单（含明细）。

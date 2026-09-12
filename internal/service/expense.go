@@ -103,8 +103,12 @@ type ClaimView struct {
 
 	Items []ClaimItemView `json:"items"`
 
-	// VoucherNo 是已生成凭证的凭证号。
+	// VoucherNo 是已生成凭证的凭证号；**草稿时为空**。
 	VoucherNo string `json:"voucherNo"`
+	// VoucherLabel 是给界面显示的凭证标识：已过账的给凭证号，
+	// 草稿给「草稿 #12」—— 草稿不占号，空着的话用户看不出成没成。
+	VoucherLabel string `json:"voucherLabel"`
+
 
 	// CanEdit / CanApprove / CanPost 由服务层算好，界面照着禁用按钮。
 	CanEdit    bool `json:"canEdit"`
@@ -197,6 +201,7 @@ func toClaimView(c *expense.Claim, names map[int64]string, vnos map[int64]string
 	}
 	if c.VoucherID != nil {
 		v.VoucherNo = vnos[*c.VoucherID]
+		v.VoucherLabel = voucherLabel(v.VoucherNo, *c.VoucherID)
 	}
 
 	for i, it := range c.Items {

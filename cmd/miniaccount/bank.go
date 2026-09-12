@@ -317,7 +317,9 @@ func bankPost(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("✓ 已为 %d 条流水生成凭证", res.Created)
+	// ★ 生成的是**草稿**：不占凭证号、不进总账。
+	// 过账只在账期结算时发生（book close），所以这里报的是 id 不是凭证号。
+	fmt.Printf("✓ 已为 %d 条流水生成凭证（草稿）", res.Created)
 	if res.Skipped > 0 {
 		fmt.Printf("，跳过 %d 条（已生成过或有未解决的问题）", res.Skipped)
 	}
@@ -327,8 +329,10 @@ func bankPost(ctx context.Context, args []string) error {
 			fmt.Printf("  …还有 %d 条\n", len(res.Vouchers)-20)
 			break
 		}
-		fmt.Printf("  %s  %s\n", p.No, p.Amount)
+		fmt.Printf("  草稿 #%d  %s\n", p.VoucherID, p.Amount)
 	}
+	fmt.Printf("\n草稿不占凭证号，也不进总账。用 `miniaccount book close` 结账时\n" +
+		"会把本期的草稿全部过账（自动分配凭证号），然后结转损益、关期间。\n")
 	if len(res.Failures) > 0 {
 		fmt.Printf("\n有 %d 条失败：\n", len(res.Failures))
 		n := 0

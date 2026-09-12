@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"miniaccount/internal/domain/calendar"
 	"miniaccount/internal/domain/money"
+	"miniaccount/internal/domain/period"
 	"miniaccount/internal/service"
 )
 
@@ -187,14 +189,70 @@ func TestAgingBadDate(t *testing.T) {
 // 辅助
 // ---------------------------------------------------------------------------
 
-// mustPost 过账一张凭证。
+// mustSave 存一张**草稿**凭证，返回它的详情。
+func mustSave(t *testing.T, svc *service.Service, in service.VoucherInput) *service.VoucherDetail {
+	t.Helper()
+	if in.CreatedBy == "" {
+		in.CreatedBy = "李会计"
+	}
+	d, err := svc.SaveVoucher(context.Background(), in)
+	if err != nil {
+		t.Fatalf("存凭证失败: %v", err)
+	}
+	if d.Status != "draft" {
+		t.Fatalf("★ 凭证录完必须是草稿（过账只发生在账期结算），实际 %s", d.Status)
+	}
+	return d
+}
+
+// mustPostInput 存一张凭证，然后把它所在期间的草稿全部过账。
+func mustPostInput(t *testing.T, svc *service.Service, in service.VoucherInput) *service.VoucherDetail {
+	t.Helper()
+	d := mustSave(t, svc, in)
+	mustPostPeriod(t, svc, d.Date[:7])
+	return d
+}
+
+// mustPostPeriod 过账某期间（"2025-01"）的全部草稿，返回过账张数。
+func mustPostPeriod(t *testing.T, svc *service.Service, label string) int {
+	t.Helper()
+	day, err := calendar.Parse(label + "-01")
+	if err != nil {
+		t.Fatalf("期间 %q 解析失败: %v", label, err)
+	}
+	res, err := svc.PostPeriodDrafts(context.Background(),
+		period.NewKey(day.Year, day.Month), "王主管")
+	if err != nil {
+		t.Fatalf("过账 %s 的草稿失败: %v", label, err)
+	}
+	return res.Posted
+}
+
+// mustPost 存一张凭证并把**该期间**的草稿全部过账。
+//
+// ★ 走的是和界面一样的路：凭证先落草稿，过账由「过账本期全部草稿」
+// 统一做（界面上这一步在结账里）。原来这里用的是 SaveAndPost ——
+// 那个「保存完立刻过账」的入口已经删掉了，因为它让「过账只在结算时」
+// 这条规则名存实亡。
 func mustPost(t *testing.T, svc *service.Service, date, remark string,
 	lines ...service.VoucherLineInput) {
 	t.Helper()
-	if _, err := svc.SaveAndPost(context.Background(), service.VoucherInput{
+	ctx := context.Background()
+	d, err := svc.SaveVoucher(ctx, service.VoucherInput{
 		Word: "记", Date: date, Remark: remark, CreatedBy: "李会计", Lines: lines,
-	}, "王主管"); err != nil {
-		t.Fatalf("过账 %s 失败: %v", date, err)
+	})
+	if err != nil {
+		t.Fatalf("存凭证 %s 失败: %v", date, err)
+	}
+	if d.Status != "draft" {
+		t.Fatalf("存下来的应当是草稿，实际 %s", d.Status)
+	}
+	day, perr := calendar.Parse(date)
+	if perr != nil {
+		t.Fatalf("日期 %q 解析失败: %v", date, perr)
+	}
+	if _, err := svc.PostPeriodDrafts(ctx, period.NewKey(day.Year, day.Month), "王主管"); err != nil {
+		t.Fatalf("过账 %s 的草稿失败: %v", date, err)
 	}
 }
 

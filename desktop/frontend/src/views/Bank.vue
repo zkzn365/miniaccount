@@ -4,7 +4,7 @@ import {
   Upload, Wand2, CheckCircle2, Ban, RefreshCw, Landmark, Info, Plus,
   Pencil, Search,
 } from 'lucide-vue-next'
-import { api, notify } from '@/lib/api'
+import { api, notify, DRAFT_HINT } from '@/lib/api'
 import { bookkeeper, loadBookkeeper, rememberBookkeeper } from '@/lib/operator'
 import { fmtMoney } from '@/lib/format'
 import Card from '@/components/ui/Card.vue'
@@ -261,7 +261,7 @@ async function postAll() {
   const r = await api.postBankFlows({ ids, postingBy: operator.value.trim() })
   busy.value = false
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
-  notify(`已生成 ${r.data.created} 张凭证`, 'success')
+  notify(`已生成 ${r.data.created} 张凭证（草稿）`, 'success', DRAFT_HINT)
   if (r.data.failures?.length) {
     notify(`有 ${r.data.failures?.length ?? 0} 条失败`, 'warn',
       r.data.failures.slice(0, 8).join('\n'))

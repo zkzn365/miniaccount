@@ -234,9 +234,13 @@ func TestBuildAndPostPayroll(t *testing.T) {
 	if posted.Status != "posted" {
 		t.Errorf("状态 = %s，期望 posted", posted.Status)
 	}
-	// 记账后应生成计提与发放两张凭证
-	if posted.AccrualVoucherNo == "" && posted.PaymentVoucherNo == "" {
-		t.Error("记账后应生成凭证号")
+	// 应生成计提与发放两张**草稿**凭证（过账在账期结算，所以没有号）
+	if posted.AccrualVoucherLabel == "" || posted.PaymentVoucherLabel == "" {
+		t.Errorf("应生成计提与发放两张凭证: %+v", posted)
+	}
+	if posted.AccrualVoucherNo != "" || posted.PaymentVoucherNo != "" {
+		t.Errorf("★ 还没结算就不该有凭证号（草稿不占号）: %q %q",
+			posted.AccrualVoucherNo, posted.PaymentVoucherNo)
 	}
 
 	// 试算必须仍然平衡 —— 工资凭证涉及多个科目，最容易在这里出问题

@@ -408,8 +408,12 @@ func TestPostClaimEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("过账失败: %v", err)
 	}
-	if res.No == "" {
-		t.Fatal("应分配凭证号")
+	// ★ 生成的是草稿：不占号、不进总账（过账在账期结算）
+	if res.No != "" {
+		t.Errorf("草稿不该有凭证号，实际 %q", res.No)
+	}
+	if res.VoucherID == 0 {
+		t.Fatal("应生成凭证")
 	}
 
 	// 凭证
@@ -436,7 +440,9 @@ func TestPostClaimEndToEnd(t *testing.T) {
 		t.Error("未回填凭证 id")
 	}
 
-	// ★ 总账
+	// ★ 总账：先过账本期草稿（等价于账期结算的第一步）。
+	// 凭证是草稿的时候总账里什么都没有 —— 这正是新规则要的效果。
+	postDrafts(t, f.DB, 2025, 9)
 	bal, err := f.DB.Vouchers().Balance(ctx,
 		calendar.MustParse("2025-09-01"), calendar.MustParse("2025-09-30"))
 	if err != nil {

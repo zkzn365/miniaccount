@@ -354,10 +354,6 @@ export function PostPayroll(arg1, arg2) {
   return window['go']['main']['App']['PostPayroll'](arg1, arg2);
 }
 
-export function PostVoucher(arg1, arg2) {
-  return window['go']['main']['App']['PostVoucher'](arg1, arg2);
-}
-
 export function PreviewAIPrompt(arg1) {
   return window['go']['main']['App']['PreviewAIPrompt'](arg1);
 }
@@ -428,10 +424,6 @@ export function SaveAIProvider(arg1) {
 
 export function SaveAccount(arg1) {
   return window['go']['main']['App']['SaveAccount'](arg1);
-}
-
-export function SaveAndPost(arg1) {
-  return window['go']['main']['App']['SaveAndPost'](arg1);
 }
 
 export function SaveAuditSettings(arg1) {

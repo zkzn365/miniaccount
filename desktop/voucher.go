@@ -79,7 +79,11 @@ type VoucherRequest struct {
 	Lines       []VoucherLineRequest `json:"lines"`
 	// CreatedBy 是制单人签章。
 	CreatedBy string `json:"createdBy"`
-	// PostedBy 是记账人签章（仅「保存并记账」时用）。
+	// PostedBy 是记账人签章。
+	//
+	// ★ 存草稿用不到它：记账签章是在**过账**那一刻盖上去的，
+	// 而本工程只在账期结算时过账（用账期管理里填的操作人）。
+	// 字段留着是为了兼容旧调用方传参，不再参与存草稿。
 	PostedBy string `json:"postedBy"`
 }
 
@@ -122,33 +126,15 @@ func (a *App) SaveVoucher(req VoucherRequest) (out *service.VoucherDetail, err e
 	return wrap(svc.SaveVoucher(a.context(), in))
 }
 
-// SaveAndPost 保存并立即过账。
-func (a *App) SaveAndPost(req VoucherRequest) (out *service.VoucherDetail, err error) {
-	defer recoverTo(&err, "SaveAndPost")()
-	svc, f := a.book()
-	if f != nil {
-		return nil, f
-	}
-	in, cerr := req.toService()
-	if cerr != nil {
-		return nil, &Fault{Kind: FaultInvalid, Message: cerr.Error()}
-	}
-	if strings.TrimSpace(req.PostedBy) == "" {
-		return nil, &Fault{Kind: FaultInvalid,
-			Message: "请填写记账人 —— 记账凭证需要有记账签章"}
-	}
-	return wrap(svc.SaveAndPost(a.context(), in, strings.TrimSpace(req.PostedBy)))
-}
-
-// PostVoucher 把一张草稿过账。
-func (a *App) PostVoucher(id int64, postedBy string) (out *service.VoucherDetail, err error) {
-	defer recoverTo(&err, "PostVoucher")()
-	svc, f := a.book()
-	if f != nil {
-		return nil, f
-	}
-	return wrap(svc.PostVoucher(a.context(), id, postedBy))
-}
+// ★ 这里原来有两个绑定：SaveAndPost（保存并记账）与 PostVoucher
+//（把一张草稿过账）。两个都删掉了。
+//
+// 凭证录完只能存草稿；过账发生在账期结算，由 CloseBook 内部统一完成。
+// 留着它们，界面上随时能把一张刚敲完的凭证直接记进总账 ——
+// 「过账只在结算时」这条规则也就名存实亡，而它一旦名存实亡，
+// 「凭证号连续」「期间完整」就又变回靠人自觉的事了。
+//
+// 想「把这一期记进账」只有一条路：结账。
 
 // DeleteVoucher 删除一张草稿。
 func (a *App) DeleteVoucher(id int64) (err error) {

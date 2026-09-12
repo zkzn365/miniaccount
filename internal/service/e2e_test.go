@@ -71,7 +71,7 @@ func TestEndToEndFullCycle(t *testing.T) {
 	t.Logf("✓ 基础档案：往来单位 3 个、部门 1 个、员工 1 名")
 
 	// ---- 3. 期初：股东投入 ----
-	if _, err := svc.SaveAndPost(ctx, service.VoucherInput{
+	mustPostInput(t, svc, service.VoucherInput{
 		Word: "记", Date: "2025-01-02", Remark: "收到股东投资款",
 		CreatedBy: "李会计",
 		Lines: []service.VoucherLineInput{
@@ -79,9 +79,7 @@ func TestEndToEndFullCycle(t *testing.T) {
 			{AccountCode: "3001", Summary: "收到投资款",
 				Credit: money100(200000), ContactID: &shareholder},
 		},
-	}, "王主管"); err != nil {
-		t.Fatalf("股东投入凭证失败: %v", err)
-	}
+	})
 	t.Logf("✓ 股东投入 200,000.00")
 
 	// ---- 4. 银行流水：导入 → 匹配 → 生成凭证 ----
@@ -225,7 +223,7 @@ func TestEndToEndFullCycle(t *testing.T) {
 	t.Logf("✓ 报销：%s 元，已审批并记账", claim.TotalAmount)
 
 	// ---- 8. 手工补一笔销售 ----
-	if _, err := svc.SaveAndPost(ctx, service.VoucherInput{
+	mustPostInput(t, svc, service.VoucherInput{
 		Word: "记", Date: "2025-02-28", Remark: "销售软件服务",
 		CreatedBy: "李会计",
 		Lines: []service.VoucherLineInput{
@@ -234,9 +232,7 @@ func TestEndToEndFullCycle(t *testing.T) {
 			newVoucherLine("5001", "销售软件服务", 0, money100(100000)),
 			newVoucherLine("22210102", "销项税额", 0, money100(6000)),
 		},
-	}, "王主管"); err != nil {
-		t.Fatalf("销售凭证失败: %v", err)
-	}
+	})
 
 	// ---- 9. 报表：全部要能出来，且勾稽成立 ----
 	k := period.NewKey(2025, 2)
@@ -376,15 +372,20 @@ func TestEndToEndFullCycle(t *testing.T) {
 			}
 		}
 	}
-	// 结账后再记账必须被拒绝
-	if _, err := svc.SaveAndPost(ctx, service.VoucherInput{
+	// ★ 已结账的期间必须拒绝写入 —— 而且要在**存草稿**这一步就拒绝。
+	//
+	// 凭证现在一律先落草稿，若存草稿不挡，用户就能往一个已经关掉的
+	// 月份里塞草稿：它不占号、不进总账，结账也不会再跑那一期，
+	// 于是这张凭证永远躺在账套里、谁也看不见。
+	if _, err := svc.SaveVoucher(ctx, service.VoucherInput{
 		Word: "记", Date: "2025-02-28", Remark: "结账后补记",
+		CreatedBy: "李会计",
 		Lines: []service.VoucherLineInput{
 			newVoucherLine("1002", "补记", money100(1), 0),
 			newVoucherLine("5001", "补记", 0, money100(1)),
 		},
-	}, "王主管"); err == nil {
-		t.Error("★ 已结账期间必须拒绝记账")
+	}); err == nil {
+		t.Error("★ 已结账期间必须拒绝记账（连草稿都不该存得进去）")
 	}
 	t.Logf("✓ 结账：结转凭证 %s，损益科目已归零", closeRes.VoucherNo)
 
@@ -498,7 +499,7 @@ func TestEndToEndOpeningBalances(t *testing.T) {
 
 	// 一张平衡的期初凭证：银行存款 + 库存现金 = 实收资本
 	shareholder := mustContact(t, svc, "shareholder", "张三")
-	if _, err := svc.SaveAndPost(ctx, service.VoucherInput{
+	mustPostInput(t, svc, service.VoucherInput{
 		Word: "记", Date: "2025-01-01", Remark: "期初余额",
 		CreatedBy: "李会计",
 		Lines: []service.VoucherLineInput{
@@ -507,18 +508,18 @@ func TestEndToEndOpeningBalances(t *testing.T) {
 			{AccountCode: "3001", Summary: "期初余额",
 				Credit: money100(155000), ContactID: &shareholder},
 		},
-	}, "王主管"); err != nil {
-		t.Fatalf("期初凭证失败: %v", err)
-	}
+	})
 
-	// 不平衡的期初必须被拒绝
-	if _, err := svc.SaveAndPost(ctx, service.VoucherInput{
+	// 不平衡的期初必须被拒绝 —— 而且是**存草稿**时就拒，
+	// 不该让用户攒了一堆存不进去的东西等到结账才发现
+	if _, err := svc.SaveVoucher(ctx, service.VoucherInput{
 		Word: "记", Date: "2025-01-01", Remark: "不平衡的期初",
+		CreatedBy: "李会计",
 		Lines: []service.VoucherLineInput{
 			newVoucherLine("1002", "期初", money100(1000), 0),
 			newVoucherLine("5001", "期初", 0, money100(999)),
 		},
-	}, "王主管"); err == nil {
+	}); err == nil {
 		t.Error("★ 借贷不平的期初必须被拒绝")
 	}
 

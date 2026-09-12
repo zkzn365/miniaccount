@@ -107,7 +107,13 @@ async function doClose() {
   })
   busy.value = false
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
-  notify(`已结账 ${r.data.period}${r.data.voucherCreated ? `，结转凭证 ${r.data.voucherNo}` : '（本期无损益）'}`, 'success')
+  // ★ 结账会先把本期草稿全部过账 —— 这是账套里唯一的过账时机，
+  // 所以必须报出张数：「结账成功」与「结账成功，顺便把 12 张草稿
+  // 记进了账」是两件事，后者用户得知道。
+  const posted = r.data.postedDrafts > 0
+    ? `，已过账本期 ${r.data.postedDrafts} 张草稿` : ''
+  const closing = r.data.voucherCreated ? `，结转凭证 ${r.data.voucherNo}` : '（本期无损益）'
+  notify(`已结账 ${r.data.period}${posted}${closing}`, 'success')
   dialog.value = null
   await load()
 }
@@ -233,6 +239,26 @@ const levelClass = {
             <p class="text-xs text-muted-foreground">{{ s.detail }}</p>
           </div>
         </div>
+      </div>
+
+      <!-- 本期草稿：结账会顺手把它们过账 -->
+      <div
+        v-if="dialog === 'close' && preview.draftCount > 0"
+        class="rounded-lg border border-[var(--warn)]/40 bg-[var(--warn)]/5 p-3 text-sm"
+      >
+        <p class="font-medium">结账会先把本期 {{ preview.draftCount }} 张草稿过账</p>
+        <p class="mt-1 text-xs text-muted-foreground">
+          凭证录入后只存草稿（不占凭证号、不进总账），过账只发生在账期结算。
+          点「确认结账」会按业务日期顺序过账、自动分配凭证号，然后才结转损益、关期间。
+        </p>
+        <ul v-if="preview.draftSamples?.length" class="mt-2 flex flex-col gap-0.5">
+          <li v-for="(d, i) in preview.draftSamples" :key="i"
+              class="text-xs text-muted-foreground">· {{ d }}</li>
+          <li v-if="preview.draftCount > preview.draftSamples.length"
+              class="text-xs text-muted-foreground">
+            · …等共 {{ preview.draftCount }} 张
+          </li>
+        </ul>
       </div>
 
       <!-- 损益概览 -->

@@ -579,7 +579,10 @@ type PostClaimResult struct {
 	Amount    money.Money
 }
 
-// PostClaim 为报销单生成凭证并过账。
+// PostClaim 为报销单生成凭证。
+//
+// ★ 生成的是**草稿**凭证：过账只发生在账期结算（见 Service.Close）。
+// 所以返回的 No 是空的 —— 草稿不占号。
 func (r *ClaimRepo) PostClaim(ctx context.Context, claimID int64,
 	postingBy string, at time.Time) (*PostClaimResult, error) {
 
@@ -598,10 +601,6 @@ func (r *ClaimRepo) PostClaim(ctx context.Context, claimID int64,
 
 	var res PostClaimResult
 	err = r.db.WithTx(ctx, func(tx *Tx) error {
-		accIDs, err := r.db.Accounts().IDsByCodeTx(ctx, tx)
-		if err != nil {
-			return err
-		}
 		vcDoc, err := voucher.New(voucher.WordZhuan, c.ApplyDate, postingBy)
 		if err != nil {
 			return err
@@ -627,13 +626,13 @@ func (r *ClaimRepo) PostClaim(ctx context.Context, claimID int64,
 			}
 		}
 
-		out, err := r.db.Vouchers().PostInTx(ctx, tx, PostInput{
-			Voucher: vcDoc, Accounts: accIDs, PostingBy: postingBy, At: at,
+		out, err := r.db.Vouchers().SaveDraftInTx(ctx, tx, DraftInput{
+			Voucher: vcDoc, CreatedBy: postingBy, Generated: true,
 		})
 		if err != nil {
 			return err
 		}
-		res.VoucherID, res.No, res.Amount = out.VoucherID, out.No, c.TotalAmount
+		res.VoucherID, res.No, res.Amount = out.VoucherID, "", c.TotalAmount
 
 		_, err = tx.Exec(ctx, `
 			UPDATE expense_claim SET status = 'posted', voucher_id = ?, updated_at = ?
@@ -878,6 +877,10 @@ type PostInvoiceResult struct {
 // 因此这里只做「有确定答案」的那一半：进项票挂应付、销项票挂应收，
 // 之后由收付款凭证去冲。发票与凭证双向关联（voucher.source_id），
 // 界面上一眼能看出哪张票已经入账、哪张还没有。
+// PostInvoice 为发票生成凭证。
+//
+// ★ 生成的是**草稿**凭证：过账只发生在账期结算（见 Service.Close）。
+// 所以返回的 No 是空的 —— 草稿不占号。
 func (r *InvoiceRepo) PostInvoice(ctx context.Context, invoiceID int64,
 	postingBy string, at time.Time, expenseAccount string,
 	deptID *int64) (*PostInvoiceResult, error) {
@@ -903,11 +906,6 @@ func (r *InvoiceRepo) PostInvoice(ctx context.Context, invoiceID int64,
 
 	var res PostInvoiceResult
 	err = r.db.WithTx(ctx, func(tx *Tx) error {
-		accIDs, err := r.db.Accounts().IDsByCodeTx(ctx, tx)
-		if err != nil {
-			return err
-		}
-
 		v, err := voucher.New(voucher.WordJi, inv.InvoiceDate, postingBy)
 		if err != nil {
 			return err
@@ -963,8 +961,8 @@ func (r *InvoiceRepo) PostInvoice(ctx context.Context, invoiceID int64,
 			}
 		}
 
-		pres, err := r.db.Vouchers().PostInTx(ctx, tx, PostInput{
-			Voucher: v, Accounts: accIDs, PostingBy: postingBy, At: at,
+		pres, err := r.db.Vouchers().SaveDraftInTx(ctx, tx, DraftInput{
+			Voucher: v, CreatedBy: postingBy, Generated: true,
 		})
 		if err != nil {
 			return err
@@ -977,7 +975,7 @@ func (r *InvoiceRepo) PostInvoice(ctx context.Context, invoiceID int64,
 			 WHERE id = ?`, pres.VoucherID, nowString(), inv.ID); err != nil {
 			return translateErr(err)
 		}
-		res.VoucherID, res.No = pres.VoucherID, pres.No
+		res.VoucherID, res.No = pres.VoucherID, ""
 		return nil
 	})
 	if err != nil {

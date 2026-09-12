@@ -101,6 +101,18 @@ func (s *Service) BankFlows(ctx context.Context, q BankFlowQuery) ([]BankFlowVie
 	return out, nil
 }
 
+// voucherLabel 给界面用的凭证标识。
+//
+// ★ 草稿没有号（草稿不占号），no 是空的。界面上直接显示空字符串，
+// 用户看到的是「已生成凭证 」后面什么都没有 —— 成了没成都看不出来。
+// 所以草稿一律显示成「草稿 #12」。
+func voucherLabel(no string, id int64) string {
+	if strings.TrimSpace(no) != "" {
+		return no
+	}
+	return fmt.Sprintf("草稿 #%d", id)
+}
+
 func (s *Service) voucherNos(ctx context.Context) (map[int64]string, error) {
 	rows, err := s.db.SQL().QueryContext(ctx, `SELECT id, no FROM voucher`)
 	if err != nil {

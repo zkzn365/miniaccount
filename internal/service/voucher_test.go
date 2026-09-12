@@ -45,7 +45,8 @@ func basicInput() service.VoucherInput {
 	}
 }
 
-func TestSaveAndPostVoucher(t *testing.T) {
+// ★ 录完凭证不能直接过账：只能存草稿，过账发生在账期结算。
+func TestVoucherIsDraftUntilPeriodSettles(t *testing.T) {
 	ctx := context.Background()
 	svc := newSvc(t, 3)
 
@@ -78,9 +79,22 @@ func TestSaveAndPostVoucher(t *testing.T) {
 		t.Errorf("草稿应可编辑/可删除/可过账: %+v", d)
 	}
 
-	posted, err := svc.PostVoucher(ctx, d.ID, "王主管")
+	// ★ 结算之前，账上不该有它 —— 这是整条规则的核心。
+	debit, credit, err := svc.DB().Vouchers().TrialBalance(ctx, periodKey(2025, 1))
 	if err != nil {
-		t.Fatalf("过账失败: %v", err)
+		t.Fatal(err)
+	}
+	if !debit.IsZero() || !credit.IsZero() {
+		t.Fatalf("结算之前总账就有数了：借 %s 贷 %s —— 凭证录完不该进账", debit, credit)
+	}
+
+	postedCount := mustPostPeriod(t, svc, "2025-01")
+	if postedCount != 1 {
+		t.Fatalf("过账了 %d 张，期望 1 张", postedCount)
+	}
+	posted, err := svc.Voucher(ctx, d.ID)
+	if err != nil {
+		t.Fatalf("读凭证失败: %v", err)
 	}
 	if posted.Status != "posted" {
 		t.Errorf("状态 = %s", posted.Status)
@@ -124,16 +138,16 @@ func TestDraftsDoNotConsumeNumbers(t *testing.T) {
 	if err := svc.DeleteVoucher(ctx, ids[1]); err != nil {
 		t.Fatalf("删除草稿失败: %v", err)
 	}
-	nos := []string{}
-	for _, id := range []int64{ids[0], ids[2]} {
-		d, err := svc.PostVoucher(ctx, id, "王主管")
-		if err != nil {
-			t.Fatalf("过账失败: %v", err)
-		}
-		nos = append(nos, d.No)
+	res, err := svc.PostPeriodDrafts(ctx, periodKey(2025, 1), "王主管")
+	if err != nil {
+		t.Fatalf("过账失败: %v", err)
+	}
+	nos := res.Nos
+	if len(nos) != 2 {
+		t.Fatalf("过账了 %d 张，期望 2 张：%v", len(nos), nos)
 	}
 	if nos[0] != "记-2025-01-0001" || nos[1] != "记-2025-01-0002" {
-		t.Errorf("草稿不该占号，两次过账应为 0001/0002，实际 %v", nos)
+		t.Errorf("草稿不该占号，过账两张应为 0001/0002，实际 %v", nos)
 	}
 }
 
@@ -230,8 +244,16 @@ func TestSaveDraftValidation(t *testing.T) {
 	}
 }
 
-// ★ 草稿允许落在未启用的期间，但过账必须被拦下
-func TestDraftAllowsClosedPeriodButPostDoesNot(t *testing.T) {
+// ★ 已结账的期间：草稿也存不进去。
+//
+// 这条规则原来正好相反 —— 草稿允许落在已结账期间，只拦过账。
+// 那时草稿是个「还没打算记账的便签」，留着无妨。
+//
+// 现在不行了：凭证一律先落草稿、过账**只**发生在账期结算，而已结账的
+// 期间不会再结算一次。于是这样一张草稿不占号、不进总账、结账也不碰它，
+// 永远躺在账套里谁也看不见 —— 而用户以为自己记上了。
+// 拦住它、并且告诉他「要补记请先反结账」，才是对的。
+func TestClosedPeriodRejectsDraftsToo(t *testing.T) {
 	ctx := context.Background()
 	svc := newSvc(t, 3)
 	sh := mustContact(t, svc, "shareholder", "张三")
@@ -243,18 +265,23 @@ func TestDraftAllowsClosedPeriodButPostDoesNot(t *testing.T) {
 
 	in := basicInput()
 	in.Lines[1].ContactID = &sh
-	// 草稿：能存下来（用户可能先按记忆记下，过几天再处理）
-	d, err := svc.SaveVoucher(ctx, in)
-	if err != nil {
-		t.Fatalf("草稿应允许落在已结账期间（真正要拦的是过账）：%v", err)
-	}
-	// 过账：必须被拦下
-	_, err = svc.PostVoucher(ctx, d.ID, "王主管")
+	_, err := svc.SaveVoucher(ctx, in)
 	if err == nil {
-		t.Fatal("已结账期间必须拒绝过账")
+		t.Fatal("★ 已结账期间不该存得进草稿 —— 它永远不会被过账，也永远不会被发现")
 	}
 	if !errors.Is(err, period.ErrNotOpen) {
 		t.Errorf("应报 ErrNotOpen，实际 %v", err)
+	}
+	if !strings.Contains(err.Error(), "反结账") {
+		t.Errorf("要给出替代做法（先反结账）：%v", err)
+	}
+
+	// 反结账之后就能记了 —— 规则不该把人堵死
+	if _, err := svc.Reopen(ctx, period.NewKey(2025, 1), "王主管"); err != nil {
+		t.Fatalf("反结账失败: %v", err)
+	}
+	if _, err := svc.SaveVoucher(ctx, in); err != nil {
+		t.Fatalf("反结账之后应当能记账: %v", err)
 	}
 }
 

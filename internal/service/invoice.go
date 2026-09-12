@@ -98,8 +98,12 @@ type InvoiceView struct {
 	ContactID   *int64 `json:"contactId"`
 	Remark      string `json:"remark"`
 
-	// VoucherNo 是已生成凭证的凭证号；为空表示尚未入账。
+	// VoucherNo 是已生成凭证的凭证号；为空表示尚未生成凭证（草稿也没有号）。
 	VoucherNo string `json:"voucherNo"`
+	// VoucherLabel 是给界面显示的凭证标识：已过账的给凭证号，
+	// 草稿给「草稿 #12」—— 草稿不占号，空着的话用户看不出成没成。
+	VoucherLabel string `json:"voucherLabel"`
+
 	// Posted 为真表示已生成凭证。
 	Posted bool `json:"posted"`
 	// AttachmentCount 是附件数量。
@@ -166,6 +170,7 @@ func toInvoiceView(inv *invoice.Invoice, vnos map[int64]string) InvoiceView {
 	if inv.VoucherID != nil {
 		v.Posted = true
 		v.VoucherNo = vnos[*inv.VoucherID]
+		v.VoucherLabel = voucherLabel(v.VoucherNo, *inv.VoucherID)
 	}
 	return v
 }

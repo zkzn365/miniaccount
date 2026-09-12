@@ -299,7 +299,7 @@ func runStatusLabel(s payroll.RunStatus) string {
 	case payroll.RunConfirmed:
 		return "已确认"
 	case payroll.RunPosted:
-		return "已记账"
+		return "已生成凭证"
 	default:
 		return string(s)
 	}
@@ -358,7 +358,11 @@ type PayrollRunDetail struct {
 	TotalNet       money.Money `json:"totalNet"`
 
 	AccrualVoucherNo string `json:"accrualVoucherNo"`
+	// AccrualVoucherLabel 是给界面显示的标识（草稿显示「草稿 #12」）。
+	AccrualVoucherLabel string `json:"accrualVoucherLabel"`
 	PaymentVoucherNo string `json:"paymentVoucherNo"`
+	// PaymentVoucherLabel 同上。
+	PaymentVoucherLabel string `json:"paymentVoucherLabel"`
 
 	// CanConfirm / CanPost 由服务层算好，界面照着禁用按钮。
 	CanConfirm bool `json:"canConfirm"`
@@ -403,9 +407,11 @@ func (s *Service) PayrollRun(ctx context.Context, id int64) (*PayrollRunDetail, 
 	}
 	if accrualID != nil {
 		d.AccrualVoucherNo = vnos[*accrualID]
+		d.AccrualVoucherLabel = voucherLabel(d.AccrualVoucherNo, *accrualID)
 	}
 	if paymentID != nil {
 		d.PaymentVoucherNo = vnos[*paymentID]
+		d.PaymentVoucherLabel = voucherLabel(d.PaymentVoucherNo, *paymentID)
 	}
 
 	for _, it := range run.Items {

@@ -610,15 +610,29 @@ func TestPostRunEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("过账失败: %v", err)
 	}
-	if res.AccrualNo == "" || res.PaymentNo == "" {
-		t.Fatal("两张凭证都应分配凭证号")
+	// ★ 生成的是草稿：不占号（过账在账期结算），但两张凭证都要在
+	if res.AccrualNo != "" || res.PaymentNo != "" {
+		t.Errorf("草稿不该有凭证号，实际 %q / %q", res.AccrualNo, res.PaymentNo)
 	}
-	// 凭证字是「转」（工资计提不直接涉及现金；「转」是转账凭证）
-	if !strings.HasPrefix(res.AccrualNo, "转-") {
-		t.Errorf("计提凭证号 = %q，期望以「转-」开头", res.AccrualNo)
+	if res.AccrualVoucherID == 0 || res.PaymentVoucherID == 0 {
+		t.Fatal("应生成计提与发放两张凭证")
 	}
-	if !strings.HasPrefix(res.PaymentNo, "转-") {
-		t.Errorf("发放凭证号 = %q，期望以「转-」开头", res.PaymentNo)
+
+	// 过账之后：凭证字是「转」（工资计提不直接涉及现金；「转」是转账凭证）
+	postDrafts(t, f.DB, 2025, 9)
+	acc, err := f.DB.Vouchers().Get(ctx, res.AccrualVoucherID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pay, err := f.DB.Vouchers().Get(ctx, res.PaymentVoucherID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(acc.No, "转-") {
+		t.Errorf("计提凭证号 = %q，期望以「转-」开头", acc.No)
+	}
+	if !strings.HasPrefix(pay.No, "转-") {
+		t.Errorf("发放凭证号 = %q，期望以「转-」开头", pay.No)
 	}
 
 	// 工资单状态
@@ -631,10 +645,6 @@ func TestPostRunEndToEnd(t *testing.T) {
 	}
 
 	// 凭证本身
-	acc, err := f.DB.Vouchers().Get(ctx, res.AccrualVoucherID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if acc.Source != "salary" {
 		t.Errorf("凭证来源 = %q，期望 salary", acc.Source)
 	}
@@ -644,7 +654,6 @@ func TestPostRunEndToEnd(t *testing.T) {
 	if !acc.IsBalanced() {
 		t.Error("计提凭证应平衡")
 	}
-	pay, _ := f.DB.Vouchers().Get(ctx, res.PaymentVoucherID)
 	if !pay.IsBalanced() {
 		t.Error("发放凭证应平衡")
 	}
