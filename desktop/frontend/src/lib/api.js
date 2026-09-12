@@ -271,6 +271,13 @@ export const api = {
   // 工资
   employees: (onlyEnabled) => call(A().Employees, onlyEnabled),
   saveEmployee: (req) => call(A().SaveEmployee, req),
+  // 人事异动：三件事各是一个动作，而不是「让用户去编辑框里改」。
+  // 每件事都有规则要校验（离职日期不能早于入职、调入的部门必须启用、
+  // 工资不能填 0），而且都要在操作日志里留下能回答
+  // 「什么时候从哪个部门调到哪个部门、工资改了多少」的记录。
+  resignEmployee: (req) => call(A().ResignEmployee, req),
+  transferEmployee: (req) => call(A().TransferEmployee, req),
+  adjustSalary: (req) => call(A().AdjustSalary, req),
   payrollRuns: () => call(A().PayrollRuns),
   payrollRunDetail: (id) => call(A().PayrollRunDetail, id),
   buildPayroll: (req) => call(A().BuildPayroll, req),
@@ -280,6 +287,9 @@ export const api = {
   schemeTemplate: (name) => call(A().SchemeTemplate, name),
   saveInsuranceSchemes: (list) => call(A().SaveInsuranceSchemes, list),
   departments: () => call(A().Departments),
+  saveDepartment: (req) => call(A().SaveDepartment, req),
+  deleteDepartment: (id) => call(A().DeleteDepartment, id),
+  departmentUsageOf: (id) => call(A().DepartmentUsageOf, id),
 
   // 导出
   exportReport: (req) => call(A().ExportReport, req),
@@ -557,7 +567,13 @@ export const mockApp = {
     { id: 1, kind: 'customer', kindLabel: '客户', name: '杭州云帆科技有限公司', shortName: '云帆科技', enabled: true },
   ],
   SaveContact: async () => 1,
-  Departments: async () => [{ id: 1, code: '001', name: '管理部门', fullName: '管理部门', enabled: true }],
+  Departments: async () => [
+    { id: 1, code: '001', name: '管理部门', fullName: '管理部门', enabled: true, parentId: null, remark: '' },
+    { id: 2, code: '002', name: '销售部', fullName: '销售部', enabled: true, parentId: null, remark: '' },
+  ],
+  SaveDepartment: async () => 1,
+  DeleteDepartment: async () => null,
+  DepartmentUsageOf: async () => ({ employees: 2, children: 0, entries: 0, bankFlows: 0, bankRules: 0, invoices: 0, claims: 0 }),
   TaxTableInfo: async () => ({ name: '个人所得税预扣率表一', note: '税率与级距全部来自可配置的参数表', brackets: [
     { upper: 3600000, ratePPM: 30000, rateLabel: '3%', deduction: 0 },
     { upper: 14400000, ratePPM: 100000, rateLabel: '10%', deduction: 252000 },

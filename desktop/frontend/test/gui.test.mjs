@@ -185,7 +185,7 @@ const page = {
   text: () => (mounted?.host.textContent ?? '').replace(/\s+/g, ' ').trim(),
   /** 按可见文字点一个按钮（界面上很多内容是切标签页才出来的）。 */
   click: async (label) => {
-    const btn = [...mounted.host.querySelectorAll('button')]
+    const btn = [...win.document.body.querySelectorAll('button')]
       .find((b) => b.textContent.replace(/\s+/g, '').includes(label.replace(/\s+/g, '')))
     assert.ok(btn, `界面上找不到「${label}」按钮`)
     btn.dispatchEvent(new win.MouseEvent('click', { bubbles: true }))
@@ -200,9 +200,19 @@ const page = {
     await bundle.nextTick()
     await settle(10)
   },
-  /** 找一个 input（按 placeholder 或选择器）。 */
+  /**
+   * 找一个 input（按 placeholder 或选择器）。
+   *
+   * ★ 搜的是整个 document，不是 mounted.host。
+   *
+   * Modal 用的是 `<Teleport to="body">`，弹窗内容挂在 body 上、
+   * 在宿主节点**外面** —— 只搜 host 的话，弹窗里的一切都找不到，
+   * 于是「弹窗里的按钮点了没反应」这类问题永远测不出来
+   * （写这一条时就撞上了：断言报「部门弹窗里没有输入框」，
+   * 而实际上是没搜对地方）。
+   */
   input: (sel) => {
-    const el = mounted.host.querySelector(sel)
+    const el = win.document.body.querySelector(sel)
     assert.ok(el, `界面上找不到输入框 ${sel}`)
     return el
   },
@@ -212,9 +222,9 @@ const page = {
     el.dispatchEvent(new win.Event('input', { bubbles: true }))
     await settle(30)
   },
-  /** 按文字找一个按钮元素（不点）。 */
+  /** 按文字找一个按钮元素（不点）。同样搜整个 document，理由见 input。 */
   button: (label) => {
-    const btn = [...mounted.host.querySelectorAll('button')]
+    const btn = [...win.document.body.querySelectorAll('button')]
       .find((b) => b.textContent.replace(/\s+/g, '').includes(label.replace(/\s+/g, '')))
     assert.ok(btn, `界面上找不到「${label}」按钮`)
     return btn
@@ -634,6 +644,128 @@ test('★ 停用 / 启用能来回切（否则停用了就再也开不回来）'
   await settle(60)
   cfg = await bundle.api.api.aiConfig()
   assert.equal(cfg.data.hasDefault, true, '启用之后又用不了了 —— 开关是单向的')
+})
+
+// ---------------------------------------------------------------------------
+// 部门与人事异动
+// ---------------------------------------------------------------------------
+//
+// 这一整块以前不存在：后端有 SaveDepartment，但**没有任何绑定暴露它**，
+// 界面上只有员工表单里那个只读下拉。于是用户根本没法新建部门 ——
+// 而绝大多数费用科目要求按部门辅助核算，没有部门就记不了费用。
+//
+// 测的是「用户能不能做到这件事」，不是「方法存不存在」。
+
+test('★ 部门能新建、改名、停用（界面到后端整条路）', async () => {
+  await page.goto('/payroll')
+  await settle(80)
+  await page.click('部门')
+  await settle(60)
+
+  const before = await bundle.api.api.departments()
+  assert.equal(before.ok, true, before.fault?.message)
+  const n0 = before.data.length
+
+  // 新建
+  await page.click('新建部门')
+  await settle(30)
+  await page.type(page.input('input[placeholder="销售部"]'), '回归测试部')
+  await page.click('保存')
+  await settle(80)
+
+  const after = await bundle.api.api.departments()
+  const made = (after.data ?? []).find((d) => d.name === '回归测试部')
+  assert.ok(made, `新建的部门没出现在列表里：${JSON.stringify(after.data)}`)
+  assert.equal(after.data.length, n0 + 1)
+
+  // 停用
+  busy: {
+    const r = await bundle.api.api.saveDepartment({ ...made, enabled: false })
+    assert.equal(r.ok, true, r.fault?.message)
+  }
+  const stopped = (await bundle.api.api.departments()).data.find((d) => d.id === made.id)
+  assert.equal(stopped.enabled, false, '停用没生效')
+
+  // 清理：删掉（没人用它，应当删得掉）
+  const del = await bundle.api.api.deleteDepartment(made.id)
+  assert.equal(del.ok, true, `没人用的部门应当能删掉：${del.fault?.message}`)
+  const final = await bundle.api.api.departments()
+  assert.ok(!(final.data ?? []).some((d) => d.id === made.id), '删完还在列表里')
+})
+
+test('★ 有人的部门删不掉，而且要说清楚被什么挡住了', async () => {
+  const depts = (await bundle.api.api.departments()).data ?? []
+  assert.ok(depts.length > 0, '账套里一个部门都没有')
+  const d = depts[0]
+
+  // 在这个部门下建一个员工
+  const emp = await bundle.api.api.saveEmployee({
+    id: 0, code: '', name: '回归测试员工', kind: 'employee',
+    baseSalary: '8000.00', siBase: '', hfbBase: '', specialAdditional: '',
+    siProfile: '', deptId: d.id, position: '', expenseAccountCode: '',
+    hireDate: '2025-01-01', leaveDate: '', enabled: true, remark: '',
+  })
+  assert.equal(emp.ok, true, emp.fault?.message)
+
+  const usage = await bundle.api.api.departmentUsageOf(d.id)
+  assert.equal(usage.ok, true, usage.fault?.message)
+  assert.ok(usage.data.employees >= 1,
+    `引用统计没数到员工：${JSON.stringify(usage.data)}`)
+
+  const del = await bundle.api.api.deleteDepartment(d.id)
+  assert.equal(del.ok, false, '部门下还有员工，不该删得掉')
+  assert.ok(/员工/.test(del.fault.message), `要说清楚被什么挡住了：${del.fault.message}`)
+  assert.ok(/停用/.test(del.fault.message), `要给出替代方案：${del.fault.message}`)
+
+  return d.id
+})
+
+test('★ 员工能转部门、调薪、离职，且编辑不会把部门抹掉', async () => {
+  const depts = (await bundle.api.api.departments()).data ?? []
+  const emps = (await bundle.api.api.employees(false)).data ?? []
+  const e = emps.find((x) => x.name === '回归测试员工')
+  assert.ok(e, '上一条建的员工不见了')
+
+  // ★ 界面的编辑是把这一行整个展开进表单再提交的。少带一个字段，
+  // 保存一次就把它抹掉了 —— 这一条守的就是那个事故。
+  assert.ok(e.deptId, 'EmployeeView 没带出 deptId —— 界面编辑一次就会抹掉部门')
+
+  // 换个部门
+  const other = depts.find((d) => d.enabled && d.id !== e.deptId)
+  if (other) {
+    const r = await bundle.api.api.transferEmployee({ id: e.id, deptId: other.id, operator: '测试' })
+    assert.equal(r.ok, true, r.fault?.message)
+    assert.equal(r.data.deptId, other.id, '转部门没生效')
+    // 转回原来的部门，别影响后面的测试
+    await bundle.api.api.transferEmployee({ id: e.id, deptId: e.deptId, operator: '测试' })
+  }
+
+  // 调薪
+  const sal = await bundle.api.api.adjustSalary({
+    id: e.id, baseSalary: '9500.00', siBase: '', hfbBase: '', operator: '测试',
+  })
+  assert.equal(sal.ok, true, sal.fault?.message)
+  assert.equal(sal.data.baseSalary, 950000, `调薪没生效：${sal.data.baseSalary}`)
+
+  // 工资填 0 要被挡住，并指向「离职」
+  const zero = await bundle.api.api.adjustSalary({ id: e.id, baseSalary: '0', operator: '测试' })
+  assert.equal(zero.ok, false, '工资填 0 应当被拒绝')
+
+  // 离职：日期 + 停用一个动作做完
+  const resign = await bundle.api.api.resignEmployee({
+    id: e.id, leaveDate: '2025-06-30', reason: '回归测试', operator: '测试',
+  })
+  assert.equal(resign.ok, true, resign.fault?.message)
+  assert.equal(resign.data.leaveDate, '2025-06-30')
+  assert.equal(resign.data.enabled, false,
+    '离职之后档案必须停用 —— 否则下个月的工资单还会把他带进来')
+  assert.equal(resign.data.statusLabel, '离职')
+
+  // 已经离职的人不能再办一次
+  const again = await bundle.api.api.resignEmployee({
+    id: e.id, leaveDate: '2025-07-31', operator: '测试',
+  })
+  assert.equal(again.ok, false, '已经离职的人不该能再办一次')
 })
 
 // 收尾：把演示账套开回来。

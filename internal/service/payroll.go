@@ -157,6 +157,20 @@ func toEmployeeView(e *payroll.Employee) EmployeeView {
 		SIProfile: e.SchemeName, SpecialAdditional: e.SpecialAdditional,
 		Enabled: e.IsEnabled, Remark: e.Remark,
 		StatusLabel: "在职",
+		// ★ 下面这三个字段原来漏了，后果比「列表里少显示一列」严重得多。
+		//
+		// 界面的「编辑」是把这一行整个展开进表单再提交的
+		//（`editEmployee` 里的 `{...row}`）。字段没被带出来，表单里就是
+		// 空的，**保存一次就把这个人的部门、岗位、工资费用科目全抹掉了**，
+		// 而且没有任何提示。
+		//
+		// 抹掉部门之后，他的工资计提会被「缺少必需的辅助核算」拒绝；
+		// 抹掉工资科目之后会退回默认的「管理费用—工资」，于是生产人员的
+		// 工资从「生产成本—直接人工」挪进了期间费用 ——
+		// 低估产品成本、高估期间费用，报出去的口径就错了。
+		DeptID:             e.DeptID,
+		Position:           e.Position,
+		ExpenseAccountCode: e.ExpenseAccountCode,
 	}
 	if e.HireDate.Valid() {
 		v.HireDate = e.HireDate.String()

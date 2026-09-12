@@ -116,16 +116,41 @@ func (s *bindingServer) call(req request) (any, error) {
 	}
 
 	out := m.Call(in)
-	if len(out) == 0 {
+	switch len(out) {
+	case 0:
 		return nil, nil
-	}
-	// 最后一个返回值是 error
-	if n := len(out); n > 1 {
-		if e, ok := out[n-1].Interface().(error); ok && !isNilErr(e) {
+
+	case 1:
+		// ★ 只有一个返回值时，它**可能是结果，也可能是 error**。
+		//
+		// 这里原来写的是 `if len(out) > 1 { 判 error }`，于是
+		// 「只返回 error」的绑定（DeleteVoucher、CloseBook、
+		// SetVATStatus、DeleteDepartment… 一共 17 个）在那个判断里
+		// 被整个跳过了 —— 错误被当成**结果**原样发给界面，
+		// 界面拿到的是 `ok: true` 加一个装着 Fault 的 data。
+		//
+		// 后果不是「少测了一点」，而是**测试给出了与真实运行相反的结论**：
+		// 真实应用里「删部门被拒绝」，在无窗口模式里显示成「删成功」。
+		// 这类假绿灯比没有测试更糟 —— 它会让人以为那条路已经验过了。
+		//
+		// Wails 自己的 boundMethod.Call 是按 OutputCount 分 1 / 2
+		// 两种情况的（case 1 里逐个判断是否实现 error），
+		// 这里必须与它逐字对齐，否则这个「假运行时」就不再是假运行时。
+		if e, ok := out[0].Interface().(error); ok {
+			if isNilErr(e) {
+				return nil, nil
+			}
 			return nil, e
 		}
+		return out[0].Interface(), nil
+
+	default:
+		// 多返回值：最后一个约定是 error
+		if e, ok := out[len(out)-1].Interface().(error); ok && !isNilErr(e) {
+			return nil, e
+		}
+		return out[0].Interface(), nil
 	}
-	return out[0].Interface(), nil
 }
 
 // isNilErr 判断「接口里装着一个 nil 指针」这种情况。

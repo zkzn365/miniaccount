@@ -5,7 +5,7 @@ import {
 } from 'lucide-vue-next'
 import { api, notify } from '@/lib/api'
 import { bookkeeper, loadBookkeeper, rememberBookkeeper } from '@/lib/operator'
-import { fmtMoney, parseYuanToCents } from '@/lib/format'
+import { fmtMoney, centsToYuanInput, parseYuanToCents } from '@/lib/format'
 import Card from '@/components/ui/Card.vue'
 import CardHeader from '@/components/ui/CardHeader.vue'
 import CardTitle from '@/components/ui/CardTitle.vue'
@@ -55,6 +55,170 @@ function emptyEmployee() {
     baseSalary: '', siBase: '', hfbBase: '', specialAdditional: '',
     siProfile: '', hireDate: '', leaveDate: '', enabled: true, remark: '',
   }
+}
+
+// ---------------------------------------------------------------------------
+// 部门管理
+// ---------------------------------------------------------------------------
+//
+// ★ 这一整块以前不存在：后端有 SaveDepartment，但没有任何绑定暴露它，
+// 界面上也只有员工表单里那个只读的下拉。于是用户**根本没法新建部门**，
+// 而绝大多数费用科目要求按部门辅助核算 —— 没有部门就记不了费用。
+
+const deptOpen = ref(false)
+const deptForm = ref(emptyDept())
+
+/** 今天的日期 YYYY-MM-DD。
+ *
+ * ★ 不能用 toISOString().slice(0,10) —— 那是 UTC。东八区下午 8 点之后
+ * 它会返回「明天」，离职日期默认值就错了一天，而且是看不出来的那种错。 */
+function todayISO() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+function emptyDept() {
+  return { id: 0, code: '', name: '', parentId: null, enabled: true, remark: '' }
+}
+
+/** 某个部门下的在职员工数（列表里直接显示，省得点进去数）。 */
+function headcountOf(deptId) {
+  return employees.value.filter((e) => e.deptId === deptId && !e.leaveDate).length
+}
+
+function editDept(d) {
+  deptForm.value = d
+    ? { id: d.id, code: d.code, name: d.name, parentId: d.parentId, enabled: d.enabled, remark: d.remark ?? '' }
+    : emptyDept()
+  deptOpen.value = true
+}
+
+async function saveDept() {
+  if (!deptForm.value.name.trim()) { notify('部门名称不能为空', 'warn'); return }
+  busy.value = true
+  const r = await api.saveDepartment(deptForm.value)
+  busy.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify(deptForm.value.id ? '部门已更新' : '部门已新建', 'success')
+  deptOpen.value = false
+  await load()
+}
+
+async function toggleDept(d) {
+  busy.value = true
+  const r = await api.saveDepartment({ ...d, enabled: !d.enabled })
+  busy.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify(d.enabled ? `已停用「${d.name}」` : `已启用「${d.name}」`, 'success')
+  await load()
+}
+
+async function removeDept(d) {
+  // ★ 先问一次「这个部门被什么引用着」，把话说明白再让用户点确认。
+  //
+  // 直接删然后弹报错是最差的做法：用户已经在心里做了「删掉」的决定，
+  // 却被一句错误打回来，还得自己去猜是哪个员工挂在下面。
+  const u = await api.departmentUsageOf(d.id)
+  if (!u.ok) { notify(u.fault.message, 'error', u.fault.detail); return }
+  const used = describeUsage(u.data)
+  if (used) {
+    notify(`「${d.name}」还在被使用：${used}`, 'warn',
+      '已经记进账的凭证不会因为删部门而改变，所以不能连它一起清掉。' +
+      '如果这个部门只是撤了、历史还要留，请改用「停用」。')
+    return
+  }
+  if (!window.confirm(`确定删除部门「${d.name}」？此操作不可撤销。`)) return
+  busy.value = true
+  const r = await api.deleteDepartment(d.id)
+  busy.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify(`已删除部门「${d.name}」`, 'success')
+  await load()
+}
+
+function describeUsage(u) {
+  const parts = []
+  const add = (n, what) => { if (n > 0) parts.push(`${what} ${n} 处`) }
+  add(u.employees, '员工')
+  add(u.children, '下级部门')
+  add(u.entries, '凭证')
+  add(u.bankFlows, '银行流水')
+  add(u.bankRules, '银行规则')
+  add(u.invoices, '发票')
+  add(u.claims, '报销单')
+  return parts.join('、')
+}
+
+/** 在某个部门下新增员工 —— 建员工时必须选部门，索性从这里进去就带好。 */
+function addEmployeeIn(d) {
+  editEmployee(null)
+  empForm.value.deptId = d.id
+}
+
+// ---------------------------------------------------------------------------
+// 人事异动：离职 / 转部门 / 调薪
+// ---------------------------------------------------------------------------
+
+const moveOpen = ref(false)
+const moveKind = ref('transfer') // transfer | salary | resign
+const moveForm = ref({})
+const moveTarget = ref(null)
+
+function openTransfer(e) {
+  moveKind.value = 'transfer'
+  moveTarget.value = e
+  // 默认选一个「不是当前部门」的，省得用户点开就看到「已经在 X 了」
+  const other = departments.value.find((d) => d.enabled && d.id !== e.deptId)
+  moveForm.value = { deptId: other?.id ?? null, reason: '' }
+  moveOpen.value = true
+}
+
+function openSalary(e) {
+  moveKind.value = 'salary'
+  moveTarget.value = e
+  moveForm.value = {
+    baseSalary: centsToYuanInput(e.baseSalary),
+    siBase: centsToYuanInput(e.siBase),
+    hfbBase: centsToYuanInput(e.hfbBase),
+    reason: '',
+  }
+  moveOpen.value = true
+}
+
+function openResign(e) {
+  moveKind.value = 'resign'
+  moveTarget.value = e
+  moveForm.value = { leaveDate: todayISO(), reason: '' }
+  moveOpen.value = true
+}
+
+async function submitMove() {
+  const e = moveTarget.value
+  busy.value = true
+  let r
+  if (moveKind.value === 'transfer') {
+    r = await api.transferEmployee({
+      id: e.id, deptId: moveForm.value.deptId ?? 0,
+      reason: moveForm.value.reason, operator: operator.value,
+    })
+  } else if (moveKind.value === 'salary') {
+    r = await api.adjustSalary({
+      id: e.id, baseSalary: moveForm.value.baseSalary,
+      siBase: moveForm.value.siBase, hfbBase: moveForm.value.hfbBase,
+      reason: moveForm.value.reason, operator: operator.value,
+    })
+  } else {
+    r = await api.resignEmployee({
+      id: e.id, leaveDate: moveForm.value.leaveDate,
+      reason: moveForm.value.reason, operator: operator.value,
+    })
+  }
+  busy.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify({ transfer: '已转部门', salary: '已调薪', resign: '已办理离职' }[moveKind.value], 'success')
+  moveOpen.value = false
+  await load()
 }
 
 async function loadSchemes() {
@@ -245,7 +409,10 @@ const statusTone = (s) => (s === 'posted' ? 'profit' : s === 'confirmed' ? 'defa
     <!-- 标签页 -->
     <div class="flex items-center gap-2">
       <Button
-        v-for="t in [{ v: 'runs', n: '工资单' }, { v: 'employees', n: '员工档案' }, { v: 'schemes', n: '社保方案' }, { v: 'tax', n: '个税参数' }]"
+        v-for="t in [
+          { v: 'runs', n: '工资单' }, { v: 'depts', n: '部门' },
+          { v: 'employees', n: '员工档案' }, { v: 'schemes', n: '社保方案' },
+          { v: 'tax', n: '个税参数' }]"
         :key="t.v"
         :variant="tab === t.v ? 'default' : 'outline'"
         size="sm"
@@ -257,6 +424,9 @@ const statusTone = (s) => (s === 'posted' ? 'profit' : s === 'confirmed' ? 'defa
                  @change="rememberBookkeeper(operator)" class="h-8 w-32" placeholder="操作人" />
         <Button v-if="tab === 'runs'" size="sm" @click="buildOpen = true">
           <Calculator /> 生成工资单
+        </Button>
+        <Button v-if="tab === 'depts'" size="sm" @click="editDept(null)">
+          <Plus /> 新建部门
         </Button>
         <Button v-if="tab === 'employees'" size="sm" @click="editEmployee(null)">
           <Plus /> 新增员工
@@ -346,6 +516,60 @@ const statusTone = (s) => (s === 'posted' ? 'profit' : s === 'confirmed' ? 'defa
     </template>
 
     <!-- 员工档案 -->
+    <!-- 部门 -->
+    <Card v-else-if="tab === 'depts'">
+      <CardHeader>
+        <CardTitle>部门</CardTitle>
+        <CardDescription>
+          绝大多数费用科目按<b>部门</b>辅助核算 —— 没有部门，费用凭证过不了账，
+          员工也没法计提工资。这里可以新建、改名、调整上下级；
+          <b>撤掉的部门用「停用」，不要删</b>：停用之后新凭证选不到它，历史报表照旧。
+        </CardDescription>
+      </CardHeader>
+      <CardContent class="px-0">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b bg-muted/40">
+              <th class="h-9 px-3 text-left text-xs font-medium text-muted-foreground">编码</th>
+              <th class="h-9 px-3 text-left text-xs font-medium text-muted-foreground">名称</th>
+              <th class="h-9 px-3 text-left text-xs font-medium text-muted-foreground">上级</th>
+              <th class="h-9 px-3 text-left text-xs font-medium text-muted-foreground">状态</th>
+              <th class="h-9 px-3 text-right text-xs font-medium text-muted-foreground">在职员工</th>
+              <th class="h-9 px-3 text-right text-xs font-medium text-muted-foreground">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="d in departments" :key="d.id" class="border-b last:border-0 hover:bg-accent/30">
+              <td class="px-3 py-1.5 font-mono text-xs">{{ d.code }}</td>
+              <td class="px-3 py-1.5 font-medium">{{ d.name }}</td>
+              <td class="px-3 py-1.5 text-xs text-muted-foreground">
+                {{ departments.find((x) => x.id === d.parentId)?.name || '—' }}
+              </td>
+              <td class="px-3 py-1.5">
+                <Badge :variant="d.enabled ? 'profit' : 'muted'">
+                  {{ d.enabled ? '启用' : '已停用' }}
+                </Badge>
+              </td>
+              <td class="num px-3 py-1.5 text-muted-foreground">{{ headcountOf(d.id) }}</td>
+              <td class="px-3 py-1.5">
+                <div class="flex justify-end gap-0.5">
+                  <Button variant="ghost" size="sm" @click="addEmployeeIn(d)">
+                    <Plus /> 加员工
+                  </Button>
+                  <Button variant="ghost" size="sm" @click="editDept(d)"><Pencil /> 编辑</Button>
+                  <Button variant="ghost" size="sm" :disabled="busy" @click="toggleDept(d)">
+                    {{ d.enabled ? '停用' : '启用' }}
+                  </Button>
+                  <Button variant="ghost" size="sm" class="text-destructive"
+                          :disabled="busy" @click="removeDept(d)">删除</Button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+
     <Card v-else-if="tab === 'employees'">
       <CardHeader>
         <CardTitle>员工档案</CardTitle>
@@ -397,8 +621,20 @@ const statusTone = (s) => (s === 'posted' ? 'profit' : s === 'confirmed' ? 'defa
               <td class="px-3 py-1.5 text-xs text-muted-foreground">{{ e.siProfile || '不缴' }}</td>
               <td class="px-3 py-1.5 text-xs text-muted-foreground">{{ e.hireDate || '—' }}</td>
               <td class="px-3 py-1.5">
-                <div class="flex justify-end">
+                <div class="flex justify-end gap-0.5">
+                  <!-- ★ 三个异动做成显式动作，而不是「进编辑框自己改」。
+                       编辑框里改离职日期要连「启用」的勾一起去掉，漏一步
+                       就是一个已经离职的人继续出现在下个月的工资单里；
+                       而调薪、转部门在编辑框里改完，事后也查不出改过什么
+                       （日志只剩一句「维护员工档案」）。 -->
                   <Button variant="ghost" size="sm" @click="editEmployee(e)"><Pencil /> 编辑</Button>
+                  <Button v-if="!e.leaveDate" variant="ghost" size="sm"
+                          @click="openTransfer(e)">转部门</Button>
+                  <Button v-if="!e.leaveDate" variant="ghost" size="sm"
+                          @click="openSalary(e)">调薪</Button>
+                  <Button v-if="!e.leaveDate" variant="ghost" size="sm"
+                          class="text-[var(--warn)]" @click="openResign(e)">离职</Button>
+                  <Badge v-else variant="muted">{{ e.leaveDate }} 离职</Badge>
                 </div>
               </td>
             </tr>
@@ -478,6 +714,130 @@ const statusTone = (s) => (s === 'posted' ? 'profit' : s === 'confirmed' ? 'defa
         </table>
       </CardContent>
     </Card>
+
+    <!-- 部门编辑 -->
+    <Modal
+      v-model:open="deptOpen"
+      :title="deptForm.id ? '编辑部门' : '新建部门'"
+      description="部门是费用类科目辅助核算的必填维度 —— 没有部门，费用凭证会被「缺少必需的辅助核算」拒绝。"
+      width="max-w-lg"
+    >
+      <div class="flex flex-col gap-3">
+        <div>
+          <Label>部门名称 *</Label>
+          <Input v-model="deptForm.name" class="mt-1.5" placeholder="销售部" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <Label>编码</Label>
+            <Input v-model="deptForm.code" class="mt-1.5" placeholder="留空则用名称" />
+          </div>
+          <div>
+            <Label>上级部门</Label>
+            <select v-model="deptForm.parentId"
+                    class="mt-1.5 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+              <option :value="null">（顶层）</option>
+              <option v-for="d in departments.filter((x) => x.id !== deptForm.id)"
+                      :key="d.id" :value="d.id">{{ d.fullName || d.name }}</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <Label>备注</Label>
+          <Input v-model="deptForm.remark" class="mt-1.5" />
+        </div>
+        <label class="flex items-center gap-2 text-sm">
+          <input v-model="deptForm.enabled" type="checkbox" class="size-4 rounded border-input" />
+          启用（停用后新建凭证选不到它，历史报表照旧）
+        </label>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <Button variant="outline" @click="deptOpen = false">取消</Button>
+          <Button :disabled="busy" @click="saveDept"><Save /> 保存</Button>
+        </div>
+      </template>
+    </Modal>
+
+    <!-- 人事异动：转部门 / 调薪 / 离职 -->
+    <Modal
+      v-model:open="moveOpen"
+      :title="{ transfer: '转部门', salary: '调薪', resign: '办理离职' }[moveKind]"
+      :description="{
+        transfer: '只改档案上的所属部门。已经生成的工资单各自固化了当时的部门，不会跟着变。',
+        salary: '只改档案上的标准工资。已经生成的工资单各自固化了当时的基本工资与社保基数，不会跟着变；下个月生成时才按新标准算。',
+        resign: '写离职日期并停用档案。离职之后他不会再被自动带进新的工资单；已计提的工资不受影响。',
+      }[moveKind]"
+      width="max-w-lg"
+    >
+      <div v-if="moveTarget" class="flex flex-col gap-3">
+        <p class="text-sm">
+          <span class="text-muted-foreground">员工：</span>
+          <span class="font-medium">{{ moveTarget.name }}</span>
+          <span class="ml-2 text-xs text-muted-foreground">{{ moveTarget.code }}</span>
+        </p>
+
+        <template v-if="moveKind === 'transfer'">
+          <div>
+            <Label>调入部门 *</Label>
+            <select v-model="moveForm.deptId"
+                    class="mt-1.5 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+              <option v-for="d in departments.filter((x) => x.enabled)" :key="d.id" :value="d.id">
+                {{ d.fullName || d.name }}
+              </option>
+            </select>
+            <p class="mt-1 text-xs text-muted-foreground">
+              只有启用的部门能选 —— 停用的部门在新建凭证时是选不到的，调进去工资会卡在辅助核算上。
+            </p>
+          </div>
+        </template>
+
+        <template v-else-if="moveKind === 'salary'">
+          <div>
+            <Label>新月基本工资（元）*</Label>
+            <Input v-model="moveForm.baseSalary" class="mt-1.5 num" placeholder="8000.00" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <Label>社保基数（元）</Label>
+              <Input v-model="moveForm.siBase" class="mt-1.5 num" placeholder="留空跟随工资" />
+            </div>
+            <div>
+              <Label>公积金基数（元）</Label>
+              <Input v-model="moveForm.hfbBase" class="mt-1.5 num" placeholder="留空跟随社保" />
+            </div>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            很多小微企业按最低基数缴纳，所以基数与工资分开填 —— 强制同步会逼你填一个错的数。
+          </p>
+        </template>
+
+        <template v-else>
+          <div>
+            <Label>离职日期 *</Label>
+            <Input v-model="moveForm.leaveDate" class="mt-1.5" placeholder="2026-03-31" />
+            <p class="mt-1 text-xs text-muted-foreground">
+              它决定这个人从哪个月起不再进工资单。不能早于入职日期。
+            </p>
+          </div>
+        </template>
+
+        <div>
+          <Label>原因（选填）</Label>
+          <Input v-model="moveForm.reason" class="mt-1.5" placeholder="会写进操作日志" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <Button variant="outline" @click="moveOpen = false">取消</Button>
+          <Button :disabled="busy"
+                  :variant="moveKind === 'resign' ? 'destructive' : 'default'"
+                  @click="submitMove">
+            {{ { transfer: '确认调动', salary: '确认调薪', resign: '确认离职' }[moveKind] }}
+          </Button>
+        </div>
+      </template>
+    </Modal>
 
     <!-- 社保方案编辑 -->
     <Modal

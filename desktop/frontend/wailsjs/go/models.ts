@@ -216,6 +216,28 @@ export namespace main {
 	        this.direction = source["direction"];
 	    }
 	}
+	export class AdjustSalaryRequest {
+	    id: number;
+	    baseSalary: string;
+	    siBase: string;
+	    hfbBase: string;
+	    reason: string;
+	    operator: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AdjustSalaryRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.baseSalary = source["baseSalary"];
+	        this.siBase = source["siBase"];
+	        this.hfbBase = source["hfbBase"];
+	        this.reason = source["reason"];
+	        this.operator = source["operator"];
+	    }
+	}
 	export class AgingRequest {
 	    asOf: string;
 	    accountPrefix: string;
@@ -684,6 +706,28 @@ export namespace main {
 	        this.remark = source["remark"];
 	    }
 	}
+	export class DepartmentRequest {
+	    id: number;
+	    code: string;
+	    name: string;
+	    parentId?: number;
+	    enabled: boolean;
+	    remark: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DepartmentRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.code = source["code"];
+	        this.name = source["name"];
+	        this.parentId = source["parentId"];
+	        this.enabled = source["enabled"];
+	        this.remark = source["remark"];
+	    }
+	}
 	export class EmployeeRequest {
 	    id: number;
 	    code: string;
@@ -1094,6 +1138,24 @@ export namespace main {
 		}
 	}
 	
+	export class ResignEmployeeRequest {
+	    id: number;
+	    leaveDate: string;
+	    reason: string;
+	    operator: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ResignEmployeeRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.leaveDate = source["leaveDate"];
+	        this.reason = source["reason"];
+	        this.operator = source["operator"];
+	    }
+	}
 	export class RestoreRequest {
 	    archive: string;
 	    dbPath: string;
@@ -1204,6 +1266,24 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.from = source["from"];
 	        this.to = source["to"];
+	    }
+	}
+	export class TransferEmployeeRequest {
+	    id: number;
+	    deptId: number;
+	    reason: string;
+	    operator: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TransferEmployeeRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.deptId = source["deptId"];
+	        this.reason = source["reason"];
+	        this.operator = source["operator"];
 	    }
 	}
 	export class UploadAttachmentRequest {
@@ -3034,6 +3114,28 @@ export namespace service {
 	        this.enabled = source["enabled"];
 	        this.remark = source["remark"];
 	        this.fullName = source["fullName"];
+	    }
+	}
+	export class DepartmentUsage {
+	    employees: number;
+	    children: number;
+	    entries: number;
+	    bankFlows: number;
+	    bankRules: number;
+	    claims: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DepartmentUsage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.employees = source["employees"];
+	        this.children = source["children"];
+	        this.entries = source["entries"];
+	        this.bankFlows = source["bankFlows"];
+	        this.bankRules = source["bankRules"];
+	        this.claims = source["claims"];
 	    }
 	}
 	export class EmployeeView {

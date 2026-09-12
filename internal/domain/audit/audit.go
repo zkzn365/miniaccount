@@ -66,8 +66,25 @@ const (
 	ActionContactSave    Action = "contact.save"
 	ActionEmployeeSave   Action = "employee.save"
 	ActionDepartmentSave Action = "department.save"
-	ActionProjectSave    Action = "project.save"
-	ActionBankRuleSave   Action = "bank_rule.save"
+	// 部门删除单列一个动作，不并进 Save。
+	//
+	// 「把销售部删了」和「把销售部改了个名」在事后追责时完全是两件事，
+	// 而 Save 那条日志里看不出是哪一种 —— 它只有改后的名字。
+	ActionDepartmentDelete Action = "department.delete"
+
+	// 人事异动的三个动作。
+	//
+	// ★ 也单列，不并进 ActionEmployeeSave。
+	//
+	// 这三件事各有各的金额与日期含义（改了多少钱、从哪个部门到哪个部门、
+	// 哪一天离职），塞进通用的「维护员工档案」之后，日志只剩一句
+	// 「改了张三的档案」，而「3 月把他从销售部调到生产部、工资从 8000
+	// 调到 9500」这种问题事后必须答得出来 —— 这是工资争议里最常见的一问。
+	ActionEmployeeResign   Action = "employee.resign"
+	ActionEmployeeTransfer Action = "employee.transfer"
+	ActionEmployeeSalary   Action = "employee.salary"
+	ActionProjectSave      Action = "project.save"
+	ActionBankRuleSave     Action = "bank_rule.save"
 
 	// 业务单据
 	ActionBankImport  Action = "bank.import"
@@ -136,13 +153,18 @@ var actionLabels = map[Action]string{
 	ActionPeriodClose:  "结账",
 	ActionPeriodReopen: "反结账",
 
-	ActionAccountSave:    "维护会计科目",
-	ActionAccountDelete:  "删除会计科目",
-	ActionContactSave:    "维护往来单位",
-	ActionEmployeeSave:   "维护员工档案",
-	ActionDepartmentSave: "维护部门",
-	ActionProjectSave:    "维护项目",
-	ActionBankRuleSave:   "维护匹配规则",
+	ActionAccountSave:      "维护会计科目",
+	ActionAccountDelete:    "删除会计科目",
+	ActionContactSave:      "维护往来单位",
+	ActionEmployeeSave:     "维护员工档案",
+	ActionDepartmentSave:   "维护部门",
+	ActionDepartmentDelete: "删除部门",
+
+	ActionEmployeeResign:   "员工离职",
+	ActionEmployeeTransfer: "员工转部门",
+	ActionEmployeeSalary:   "员工调薪",
+	ActionProjectSave:      "维护项目",
+	ActionBankRuleSave:     "维护匹配规则",
 
 	ActionBankImport:  "导入银行流水",
 	ActionBankPost:    "银行流水生成凭证",

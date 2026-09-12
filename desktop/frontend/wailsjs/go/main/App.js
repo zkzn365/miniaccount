@@ -42,6 +42,10 @@ export function ActiveContacts(arg1, arg2) {
   return window['go']['main']['App']['ActiveContacts'](arg1, arg2);
 }
 
+export function AdjustSalary(arg1) {
+  return window['go']['main']['App']['AdjustSalary'](arg1);
+}
+
 export function AgingReport(arg1) {
   return window['go']['main']['App']['AgingReport'](arg1);
 }
@@ -174,8 +178,16 @@ export function DefaultBookDir() {
   return window['go']['main']['App']['DefaultBookDir']();
 }
 
+export function DeleteDepartment(arg1) {
+  return window['go']['main']['App']['DeleteDepartment'](arg1);
+}
+
 export function DeleteVoucher(arg1) {
   return window['go']['main']['App']['DeleteVoucher'](arg1);
+}
+
+export function DepartmentUsageOf(arg1) {
+  return window['go']['main']['App']['DepartmentUsageOf'](arg1);
 }
 
 export function Departments() {
@@ -358,6 +370,10 @@ export function ResetVATPolicies() {
   return window['go']['main']['App']['ResetVATPolicies']();
 }
 
+export function ResignEmployee(arg1) {
+  return window['go']['main']['App']['ResignEmployee'](arg1);
+}
+
 export function ResolveVATRate(arg1) {
   return window['go']['main']['App']['ResolveVATRate'](arg1);
 }
@@ -404,6 +420,10 @@ export function SaveClaim(arg1) {
 
 export function SaveContact(arg1) {
   return window['go']['main']['App']['SaveContact'](arg1);
+}
+
+export function SaveDepartment(arg1) {
+  return window['go']['main']['App']['SaveDepartment'](arg1);
 }
 
 export function SaveEmployee(arg1) {
@@ -476,6 +496,10 @@ export function TaxTableInfo() {
 
 export function Today() {
   return window['go']['main']['App']['Today']();
+}
+
+export function TransferEmployee(arg1) {
+  return window['go']['main']['App']['TransferEmployee'](arg1);
 }
 
 export function UploadAttachment(arg1) {

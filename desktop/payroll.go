@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 
+	"miniaccount/internal/domain/money"
 	"miniaccount/internal/domain/payroll"
 	"miniaccount/internal/service"
 )
@@ -223,4 +224,152 @@ func (a *App) TaxTableInfo() (out *service.TaxTableInfo, err error) {
 func errField(field string, err error) error {
 	return &Fault{Kind: FaultInvalid,
 		Message: field + "：" + err.Error()}
+}
+
+// ---------------------------------------------------------------------------
+// 部门管理
+// ---------------------------------------------------------------------------
+//
+// ★ 原来只有 Departments()（只读）。仓库里有 SaveDepartment，
+// 但**没有任何绑定暴露它** —— 于是产品里根本没有办法新建或修改部门，
+// 用户在设置里看到的部门清单永远只有建账时种下的那一个「管理部门」。
+// 而绝大多数费用科目要求按部门辅助核算，没有部门就记不了费用。
+
+// SaveDepartment 新增或修改部门。
+func (a *App) SaveDepartment(req DepartmentRequest) (out int64, err error) {
+	defer recoverTo(&err, "SaveDepartment")()
+	svc, f := a.book()
+	if f != nil {
+		return 0, f
+	}
+	return wrap(svc.SaveDepartment(a.context(), service.Department{
+		ID: req.ID, Code: req.Code, Name: req.Name,
+		ParentID: req.ParentID, Enabled: req.Enabled, Remark: req.Remark,
+	}))
+}
+
+// DeleteDepartment 删除部门。
+//
+// 被员工、下级部门或已记账凭证引用时会被拒绝，并说明被什么挡住了 ——
+// 部门在库里是自由整数，没有外键兜着，所以这层检查是唯一的防线。
+func (a *App) DeleteDepartment(id int64) (err error) {
+	defer recoverTo(&err, "DeleteDepartment")()
+	svc, f := a.book()
+	if f != nil {
+		return f
+	}
+	_, f2 := wrap(struct{}{}, svc.DeleteDepartment(a.context(), id))
+	return f2
+}
+
+// DepartmentUsageOf 统计一个部门被引用的次数。
+//
+// 界面在**点删除之前**就用它把话说明白（「这个部门下还有 3 个员工」），
+// 而不是让用户点完再看报错。
+func (a *App) DepartmentUsageOf(id int64) (out service.DepartmentUsage, err error) {
+	defer recoverTo(&err, "DepartmentUsageOf")()
+	svc, f := a.book()
+	if f != nil {
+		return out, f
+	}
+	return wrap(svc.DepartmentUsageOf(a.context(), id))
+}
+
+// DepartmentRequest 是新增/修改部门的请求。
+type DepartmentRequest struct {
+	ID       int64  `json:"id"`
+	Code     string `json:"code"`
+	Name     string `json:"name"`
+	ParentID *int64 `json:"parentId"`
+	Enabled  bool   `json:"enabled"`
+	Remark   string `json:"remark"`
+}
+
+// ---------------------------------------------------------------------------
+// 人事异动
+// ---------------------------------------------------------------------------
+
+// ResignEmployeeRequest 是办理离职的请求。
+type ResignEmployeeRequest struct {
+	ID        int64  `json:"id"`
+	LeaveDate string `json:"leaveDate"`
+	Reason    string `json:"reason"`
+	Operator  string `json:"operator"`
+}
+
+// ResignEmployee 办理离职：写离职日期 + 停用档案 + 留一条日志。
+func (a *App) ResignEmployee(req ResignEmployeeRequest) (out *service.EmployeeView, err error) {
+	defer recoverTo(&err, "ResignEmployee")()
+	svc, f := a.book()
+	if f != nil {
+		return nil, f
+	}
+	return wrap(svc.ResignEmployee(a.context(), service.ResignInput{
+		ID: req.ID, LeaveDate: req.LeaveDate, Reason: req.Reason,
+		Operator: req.Operator,
+	}))
+}
+
+// TransferEmployeeRequest 是把员工调入另一个部门的请求。
+type TransferEmployeeRequest struct {
+	ID       int64  `json:"id"`
+	DeptID   int64  `json:"deptId"`
+	Reason   string `json:"reason"`
+	Operator string `json:"operator"`
+}
+
+// TransferEmployee 把员工调到一个新部门。
+func (a *App) TransferEmployee(req TransferEmployeeRequest) (out *service.EmployeeView, err error) {
+	defer recoverTo(&err, "TransferEmployee")()
+	svc, f := a.book()
+	if f != nil {
+		return nil, f
+	}
+	return wrap(svc.TransferEmployee(a.context(), service.TransferInput{
+		ID: req.ID, DeptID: req.DeptID, Reason: req.Reason, Operator: req.Operator,
+	}))
+}
+
+// AdjustSalaryRequest 是调薪的请求。金额是**元**的字符串，与界面一致。
+type AdjustSalaryRequest struct {
+	ID         int64  `json:"id"`
+	BaseSalary string `json:"baseSalary"`
+	SIBase     string `json:"siBase"`
+	HFBBase    string `json:"hfbBase"`
+	Reason     string `json:"reason"`
+	Operator   string `json:"operator"`
+}
+
+// AdjustSalary 调整员工的工资标准。
+//
+// ★ 只改档案上的标准值。已经生成的工资单各自固化了当时的基本工资
+// （见 salary_item 的列），所以历史单据不会跟着变。
+func (a *App) AdjustSalary(req AdjustSalaryRequest) (out *service.EmployeeView, err error) {
+	defer recoverTo(&err, "AdjustSalary")()
+	svc, f := a.book()
+	if f != nil {
+		return nil, f
+	}
+	in := service.AdjustSalaryInput{
+		ID: req.ID, Reason: req.Reason, Operator: req.Operator,
+	}
+	for _, f2 := range []struct {
+		name string
+		in   string
+		out  *money.Money
+	}{
+		{"基本工资", req.BaseSalary, &in.BaseSalary},
+		{"社保基数", req.SIBase, &in.SIBase},
+		{"公积金基数", req.HFBBase, &in.HFBBase},
+	} {
+		if strings.TrimSpace(f2.in) == "" {
+			continue
+		}
+		m, perr := ParseYuan(f2.in)
+		if perr != nil {
+			return nil, errField(f2.name, perr)
+		}
+		*f2.out = m
+	}
+	return wrap(svc.AdjustSalary(a.context(), in))
 }

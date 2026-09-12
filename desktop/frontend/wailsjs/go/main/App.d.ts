@@ -26,6 +26,8 @@ export function AccountOptions():Promise<Array<service.AccountOption>>;
 
 export function ActiveContacts(arg1:string,arg2:string):Promise<Array<service.ActiveContactsView>>;
 
+export function AdjustSalary(arg1:main.AdjustSalaryRequest):Promise<service.EmployeeView>;
+
 export function AgingReport(arg1:main.AgingRequest):Promise<service.AgingView>;
 
 export function AppVersion():Promise<string>;
@@ -92,7 +94,11 @@ export function CurrentBook():Promise<main.BookStatus>;
 
 export function DefaultBookDir():Promise<string>;
 
+export function DeleteDepartment(arg1:number):Promise<void>;
+
 export function DeleteVoucher(arg1:number):Promise<void>;
+
+export function DepartmentUsageOf(arg1:number):Promise<service.DepartmentUsage>;
 
 export function Departments():Promise<Array<service.Department>>;
 
@@ -184,6 +190,8 @@ export function ResetAIPromptConfig():Promise<void>;
 
 export function ResetVATPolicies():Promise<void>;
 
+export function ResignEmployee(arg1:main.ResignEmployeeRequest):Promise<service.EmployeeView>;
+
 export function ResolveVATRate(arg1:main.VATRateQuery):Promise<service.VATRateResult>;
 
 export function RestoreBackup(arg1:main.RestoreRequest):Promise<main.RestoreResult>;
@@ -207,6 +215,8 @@ export function SaveBookkeeper(arg1:string):Promise<void>;
 export function SaveClaim(arg1:main.ClaimRequest):Promise<service.ClaimView>;
 
 export function SaveContact(arg1:main.ContactRequest):Promise<number>;
+
+export function SaveDepartment(arg1:main.DepartmentRequest):Promise<number>;
 
 export function SaveEmployee(arg1:main.EmployeeRequest):Promise<number>;
 
@@ -243,6 +253,8 @@ export function SummaryByPeriod(arg1:number,arg2:number):Promise<service.Summary
 export function TaxTableInfo():Promise<service.TaxTableInfo>;
 
 export function Today():Promise<string>;
+
+export function TransferEmployee(arg1:main.TransferEmployeeRequest):Promise<service.EmployeeView>;
 
 export function UploadAttachment(arg1:main.UploadAttachmentRequest):Promise<service.AttachmentInfo>;
 
