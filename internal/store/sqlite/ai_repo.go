@@ -183,9 +183,18 @@ func (r *AIRepo) DefaultProvider(ctx context.Context) (aiprovider.Provider, erro
 		}
 	}
 	if len(all) == 0 {
-		return aiprovider.Disabled{Reason: "尚未配置模型服务"}, nil
+		return aiprovider.Disabled{Reason: "还没有配置模型服务 —— " +
+			"去「设置 → AI 记账助手」填一个（服务地址 + 模型名）"}, nil
 	}
-	return aiprovider.Disabled{Reason: "所有模型服务都已停用"}, nil
+	// ★ 不能只说「已停用」。
+	//
+	// 用户看到「所有模型服务都已停用」时的第一反应是「我明明配好了」——
+	// 而配置页上那行「已停用」是个灰色小徽标，跟「默认」「本地」
+	// 混在一列里，没有人会把它读成「你需要点一下」。
+	// 所以这里把**数量**和**下一步**都写出来。
+	return aiprovider.Disabled{Reason: fmt.Sprintf(
+		"配置了 %d 个模型服务，但都处于停用状态 —— "+
+			"去「设置 → AI 记账助手」把要用的那个点「启用」", len(all))}, nil
 }
 
 // Build 由配置构造可用的 Provider。

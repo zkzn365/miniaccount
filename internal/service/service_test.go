@@ -347,9 +347,21 @@ func TestAISuggestWithoutProvider(t *testing.T) {
 	if res.Error == "" {
 		t.Fatal("必须说明失败原因")
 	}
-	if !strings.Contains(res.Error, "未启用") &&
-		!strings.Contains(res.Error, "尚未配置") {
-		t.Errorf("错误信息应说明原因，实际 %q", res.Error)
+	// ★ 断言「这条消息有没有用」，而不是它的字面。
+	//
+	// 它会原样出现在界面的建议面板里（前面再加「生成失败：」），
+	// 用户要能从中读出**下一步做什么**。只说「未启用」等于让他
+	// 自己去猜在哪儿开 —— 而这一条正是用户报回来的问题：
+	// 配了模型却被告知「还没有配置」。
+	//
+	// 注意这里**不能**写死要求「尚未配置」之类的字样：
+	// 「没配置」和「配了但停用」是两件事，原因由存储层按实际情况给，
+	// 写死哪一种都会把另一种判成失败。
+	if !strings.Contains(res.Error, "设置") {
+		t.Errorf("错误信息要告诉用户去哪儿处理，实际 %q", res.Error)
+	}
+	if strings.Contains(res.Error, "ai: ") {
+		t.Errorf("错误信息里不该带包的报错前缀，实际 %q", res.Error)
 	}
 	if res.Voucher != nil {
 		t.Error("失败时不该带出凭证内容")

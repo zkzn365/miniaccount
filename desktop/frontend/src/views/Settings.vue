@@ -42,11 +42,26 @@ const includeFiles = ref(true)
 const emit = defineEmits(['book-changed'])
 const busy = ref(false)
 
-const providerForm = ref({
-  name: '本地 Ollama', kind: 'local',
-  baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b',
-  apiKey: '', isDefault: true,
-})
+// ★ 表单必须带 `enabled`，而且新建时默认 true。
+//
+// 这里原来没有这个字段，保存时后端收到的是 Go 的零值 false ——
+// 于是「在设置里配好了模型」和「AI 说所有模型服务都已停用」同时成立，
+// 而界面上**没有任何开关**能把它打开（列表里只有一个灰色小徽标）。
+// 用户完全没有出路。
+//
+// 新建的服务默认启用：加一个服务本来就是想用它；
+// 真要停用，存下来再点一下「停用」。
+function emptyProviderForm() {
+  return {
+    id: 0,
+    name: '本地 Ollama', kind: 'local',
+    baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b',
+    apiKey: '', isDefault: true,
+    enabled: true,
+    timeoutMs: 0, remark: '',
+  }
+}
+const providerForm = ref(emptyProviderForm())
 
 async function load() {
   const [b, f, v, a, au, or] = await Promise.all([
@@ -84,11 +99,41 @@ onMounted(async () => {
 const stats = computed(() => aiCfg.value?.stats ?? null)
 
 async function saveProvider() {
+  if (!providerForm.value.name.trim() || !providerForm.value.baseUrl.trim() ||
+      !providerForm.value.model.trim()) {
+    notify('服务名、服务地址、模型名都不能为空', 'warn')
+    return
+  }
   busy.value = true
+  const editing = providerForm.value.id !== 0
   const r = await api.saveAIProvider(providerForm.value)
   busy.value = false
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
-  notify('模型服务已保存', 'success')
+  notify(editing ? '模型服务已更新' : '模型服务已保存并启用', 'success')
+  providerForm.value = emptyProviderForm()
+  await load()
+}
+
+/** 把一行配置读回表单（含启用状态、超时、备注 —— 漏一个就会在保存时被清掉）。 */
+function editProvider(p) {
+  providerForm.value = {
+    id: p.id, name: p.name, kind: p.kind, baseUrl: p.baseUrl,
+    model: p.model, apiKey: p.apiKey ?? '', isDefault: p.isDefault,
+    enabled: p.enabled, timeoutMs: p.timeoutMs, remark: p.remark ?? '',
+  }
+}
+
+function cancelEdit() {
+  providerForm.value = emptyProviderForm()
+}
+
+/** 就地启用 / 停用 —— 光有徽标没有开关，等于配了也用不上。 */
+async function toggleProvider(p) {
+  busy.value = true
+  const r = await api.saveAIProvider({ ...p, enabled: !p.enabled })
+  busy.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify(p.enabled ? `已停用「${p.name}」` : `已启用「${p.name}」`, 'success')
   await load()
 }
 
@@ -372,6 +417,9 @@ const acceptRate = computed(() => {
         </CardTitle>
         <CardDescription>
           默认推荐本地模型 —— 银行流水、工资、客户名单不该离开你的电脑。
+          <br />
+          保存之后是<b>启用</b>状态；停用了的服务不会被 AI 使用，
+          列表里可以随时启用回来。
         </CardDescription>
       </CardHeader>
       <CardContent class="flex flex-col gap-4">
@@ -381,7 +429,8 @@ const acceptRate = computed(() => {
             <Table>
               <thead>
                 <tr class="border-b bg-muted/40">
-                  <Th>名称</Th><Th>形态</Th><Th>模型</Th><Th>地址</Th><Th>状态</Th>
+                  <Th>名称</Th><Th>形态</Th><Th>模型</Th><Th>地址</Th>
+                  <Th>状态</Th><Th>操作</Th>
                 </tr>
               </thead>
               <tbody>
@@ -396,8 +445,23 @@ const acceptRate = computed(() => {
                   <Td class="font-mono text-xs">{{ p.model }}</Td>
                   <Td class="font-mono text-xs text-muted-foreground">{{ p.baseUrl }}</Td>
                   <Td>
-                    <Badge v-if="p.isDefault" variant="default">默认</Badge>
-                    <Badge v-else-if="!p.enabled" variant="muted">已停用</Badge>
+                    <!-- ★ 启用状态要和「默认」分开显示。
+                         原来两者挤在同一个单元格里、还用 else-if 串起来，
+                         结果「默认」的徽标把「已停用」挡掉了 ——
+                         一个默认但停用的服务，看上去完全正常。 -->
+                    <div class="flex gap-1">
+                      <Badge v-if="p.enabled" variant="profit">已启用</Badge>
+                      <Badge v-else variant="muted">已停用</Badge>
+                      <Badge v-if="p.isDefault" variant="default">默认</Badge>
+                    </div>
+                  </Td>
+                  <Td>
+                    <div class="flex gap-1">
+                      <Button size="sm" variant="ghost" @click="editProvider(p)">编辑</Button>
+                      <Button size="sm" variant="outline" :disabled="busy" @click="toggleProvider(p)">
+                        {{ p.enabled ? '停用' : '启用' }}
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               </tbody>
@@ -450,10 +514,19 @@ const acceptRate = computed(() => {
           </span>
         </div>
 
-        <div class="flex items-center gap-3">
-          <Button :disabled="busy" @click="saveProvider"><Save /> 保存模型服务</Button>
+        <div class="flex flex-wrap items-center gap-3">
+          <Button :disabled="busy" @click="saveProvider">
+            <Save /> {{ providerForm.id ? '保存修改' : '保存并启用' }}
+          </Button>
+          <Button v-if="providerForm.id" variant="ghost" size="sm" @click="cancelEdit">
+            取消编辑
+          </Button>
           <span class="text-xs text-muted-foreground">
-            本地模型示例：先装 Ollama，执行 <code class="rounded bg-muted px-1">ollama pull qwen2.5:7b</code>
+            <template v-if="providerForm.id">正在编辑「{{ providerForm.name }}」</template>
+            <template v-else>
+              本地模型示例：先装 Ollama，执行
+              <code class="rounded bg-muted px-1">ollama pull qwen2.5:7b</code>
+            </template>
           </span>
         </div>
 

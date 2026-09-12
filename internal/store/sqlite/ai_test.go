@@ -115,7 +115,11 @@ func TestAIProviderValidation(t *testing.T) {
 	}
 }
 
-// 没有配置时返回 Disabled 而不是 nil，避免调用点判空疏漏
+// 没有配置时返回 Disabled 而不是 nil，避免调用点判空疏漏。
+//
+// ★ 断言的是「这条消息有没有用」，不是它的字面。
+// 这句话会一路飘到界面上变成用户看到的报错，所以他必须能从中读出
+// **下一步做什么** —— 只说「没有模型服务」等于让他自己去猜在哪儿配。
 func TestAIDefaultProviderWhenNone(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
@@ -131,12 +135,25 @@ func TestAIDefaultProviderWhenNone(t *testing.T) {
 	if !errors.Is(cerr, aiprovider.ErrDisabled) {
 		t.Errorf("应报 ErrDisabled，实际 %v", cerr)
 	}
-	if !strings.Contains(cerr.Error(), "尚未配置") {
-		t.Errorf("应说明原因，实际 %v", cerr)
+	msg := cerr.Error()
+	if !strings.Contains(msg, "没有配置") {
+		t.Errorf("应说明是「还没配」，实际 %v", msg)
+	}
+	if !strings.Contains(msg, "设置") {
+		t.Errorf("要告诉用户去哪儿配，实际 %v", msg)
+	}
+	// 消息里不该再裹一层包名前缀：用户读的是「怎么解决」，
+	// 不是「哪个 Go 包报的」。
+	if strings.Contains(msg, "ai: ") || strings.Contains(msg, "未启用") {
+		t.Errorf("消息里不该带包的报错前缀，实际 %v", msg)
 	}
 }
 
-// 全部停用时也要明确报「已停用」而不是「没配置」
+// 全部停用时也要明确报「已停用」而不是「没配置」。
+//
+// 这两种情况用户要做的事完全不同：一个是去**新建**，
+// 一个是去把已有的那个**打开**。说错了就是让他白跑一趟 ——
+// 这正是用户实际报回来的那个问题。
 func TestAIDefaultProviderAllDisabled(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
@@ -146,10 +163,27 @@ func TestAIDefaultProviderAllDisabled(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.AI().SaveProvider(ctx, &AIProviderConfig{
+		Name: "B", Kind: "local", BaseURL: "http://127.0.0.1:1/v1",
+		Model: "m2", Enabled: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	p, _ := db.AI().DefaultProvider(ctx)
 	_, err := p.Complete(ctx, aiprovider.Request{})
-	if !strings.Contains(err.Error(), "停用") {
-		t.Errorf("应说明已停用，实际 %v", err)
+	msg := err.Error()
+
+	if !strings.Contains(msg, "停用") {
+		t.Errorf("应说明是停用而不是没配，实际 %v", msg)
+	}
+	if !strings.Contains(msg, "2") {
+		t.Errorf("要说清楚配了几个（这里有 2 个），实际 %v", msg)
+	}
+	if !strings.Contains(msg, "启用") {
+		t.Errorf("要告诉用户「启用」这个动作，实际 %v", msg)
+	}
+	if strings.Contains(msg, "还没有配置") || strings.Contains(msg, "尚未配置") {
+		t.Errorf("已经配了 2 个，不能说成没配 —— 用户会被指去重做一遍，实际 %v", msg)
 	}
 }
 

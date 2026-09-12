@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -170,9 +171,20 @@ func (s *Service) StartAIAgentRun(ctx context.Context, req AIAgentRequest) (*AIA
 	if err != nil {
 		return nil, err
 	}
-	if _, disabled := prov.(aiprovider.Disabled); disabled {
-		return nil, fmt.Errorf("还没有可用的模型服务 —— 请先在「设置」里配置，" +
-			"或在 AI 配置里填好接口地址与密钥")
+	if d, disabled := prov.(aiprovider.Disabled); disabled {
+		// ★ 用**它给出的原因**，不要在这里另写一句。
+		//
+		// 原来这里写死的是「还没有可用的模型服务 —— 请先在「设置」里配置」，
+		// 而真实情况完全可能是「配了几个、但都处于停用」—— 用户明明配好了，
+		// 却被指着去再做一遍已经做过的事，而他不可能知道问题出在
+		// 配置页那一列灰色小徽标上。
+		//
+		// 原因由存储层算（它知道配了几个、有几个开着），这里只负责别丢掉。
+		if d.Reason != "" {
+			return nil, errors.New(d.Reason)
+		}
+		return nil, errors.New(
+			"没有可用的模型服务 —— 去「设置 → AI 记账助手」配置一个")
 	}
 
 	items, err := s.pendingForAgent(ctx, req)

@@ -576,6 +576,66 @@ test('★ 建账页有「选择目录…」「打开目录」，打开账套有�
   assert.ok(page.button('浏览'), '「打开别处的账套」卡片没有「浏览…」按钮')
 })
 
+// ---------------------------------------------------------------------------
+// AI 模型服务：配了就得能用
+// ---------------------------------------------------------------------------
+//
+// ★ 这一条是用户报回来的：在设置里配好了模型，点生成仍然报
+// 「所有模型服务都已停用」。根因是**表单里没有 enabled 字段** ——
+// 保存时后端收到 Go 的零值 false，服务被存成停用，而界面上
+// 没有任何开关能把它打开。用户完全没有出路。
+//
+// 所以这里测的不是「表单能提交」，而是「配完之后 AI 的开关确实是开的」：
+// 直接问后端 hasDefault（它只统计 enabled 的服务）。
+
+test('★ 在设置里保存模型服务之后，它是启用状态（不是悄悄存成停用）', async () => {
+  await page.goto('/settings')
+  await settle(60)
+
+  // 表单有默认值（本地 Ollama），直接存即可 —— 这也正是用户的操作路径。
+  const before = await bundle.api.api.aiConfig()
+  assert.equal(before.ok, true, before.fault?.message)
+
+  await page.click('保存并启用')
+  await settle(60)
+
+  const cfg = await bundle.api.api.aiConfig()
+  assert.equal(cfg.ok, true, cfg.fault?.message)
+  const provs = cfg.data.providers ?? []
+  assert.ok(provs.length > 0, '保存之后一条服务都没有 —— 表单根本没提交成功')
+
+  const saved = provs.find((p) => p.baseUrl && p.model)
+  assert.ok(saved, `保存的服务缺字段：${JSON.stringify(provs)}`)
+  assert.equal(saved.enabled, true,
+    '保存下来的服务是「停用」状态 —— 表单没带上 enabled，' +
+    '用户配完模型点生成只会得到「所有模型服务都已停用」')
+
+  // hasDefault 是后端按 enabled 统计出来的，等于「AI 到底能不能用」。
+  assert.equal(cfg.data.hasDefault, true,
+    '没有任何启用的服务 —— AI 用不了，而用户以为自己配好了')
+
+  // 界面上也要看得见「已启用」，不能只有一个灰色小徽标。
+  const t = page.text()
+  assert.ok(t.includes('已启用'), `设置页没显示启用状态：${t.slice(0, 300)}`)
+})
+
+test('★ 停用 / 启用能来回切（否则停用了就再也开不回来）', async () => {
+  await page.goto('/settings')
+  await settle(60)
+
+  await page.click('停用')
+  await settle(60)
+  let cfg = await bundle.api.api.aiConfig()
+  assert.equal(cfg.ok, true, cfg.fault?.message)
+  assert.equal(cfg.data.hasDefault, false, '停用之后仍然是可用状态')
+  assert.ok((cfg.data.providers ?? []).every((p) => !p.enabled), '还有服务是启用着的')
+
+  await page.click('启用')
+  await settle(60)
+  cfg = await bundle.api.api.aiConfig()
+  assert.equal(cfg.data.hasDefault, true, '启用之后又用不了了 —— 开关是单向的')
+})
+
 // 收尾：把演示账套开回来。
 // 这一段本身也是断言 —— 建完账再打开另一个账套不能把界面卡住。
 test('★ 收尾：重新打开演示账套，菜单恢复可点', async () => {

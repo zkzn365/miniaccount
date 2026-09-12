@@ -447,9 +447,29 @@ func (d Disabled) Model() string { return "" }
 func (d Disabled) Kind() Kind { return KindLocal }
 
 // Complete 永远返回 ErrDisabled。
+//
+// ★ 消息里**只留原因**，不裹 `ErrDisabled` 那句前缀。
+//
+// 这句话会一路飘到界面上变成用户看到的报错（前面再加「生成失败：」），
+// 而他需要读的是「为什么不能用、去哪儿开」。原来拼出来是
+//
+//	生成失败：ai: AI 功能未启用: 所有模型服务都已停用
+//
+// 三个冒号，有用的信息在最后一段，中间的包名前缀纯属噪音。
+// 现在用 Unwrap 保住哨兵错误（调用方照样 errors.Is(err, ErrDisabled)），
+// 消息本身却干净了：
+//
+//	生成失败：配置了 1 个模型服务，但它处于停用状态 —— 去「设置 → AI 记账助手」启用
+type disabledError struct{ reason string }
+
+func (e *disabledError) Error() string { return e.reason }
+
+// Unwrap 让 errors.Is(err, ErrDisabled) 继续成立。
+func (e *disabledError) Unwrap() error { return ErrDisabled }
+
 func (d Disabled) Complete(context.Context, Request) (*Response, error) {
 	if d.Reason != "" {
-		return nil, fmt.Errorf("%w: %s", ErrDisabled, d.Reason)
+		return nil, &disabledError{reason: d.Reason}
 	}
 	return nil, ErrDisabled
 }
