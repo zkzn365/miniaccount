@@ -575,7 +575,7 @@ const integrity = computed(() => {
         <Card v-if="result.failures?.length" class="border-destructive/50">
           <CardHeader>
             <CardTitle class="text-[var(--loss)]">
-              护栏拦下了这条建议（{{ result.failures.length }} 项）
+              护栏拦下了这条建议（{{ result.failures?.length ?? 0 }} 项）
             </CardTitle>
             <CardDescription>
               这些内容<b>不会</b>写入账本。护栏刻意不自动「调平」——

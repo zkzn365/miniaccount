@@ -394,7 +394,10 @@ func (s *Service) Overview(ctx context.Context) (*Dashboard, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &Dashboard{Book: book}
+	// ★ BalanceSheetIssues 预置成空切片：nil 会被编成 JSON 的 null，
+	// 而界面拿它当数组用。空账套没有勾稽问题 → 这一项恰好是 nil →
+	// 首页一打开就崩。这类字段只有「没有数据时」才炸，最难在开发时发现。
+	d := &Dashboard{Book: book, BalanceSheetIssues: []string{}}
 	for i := len(book.Periods) - 1; i >= 0; i-- {
 		p := book.Periods[i]
 		if p.Status == string(period.StatusClosed) && d.LatestClosedPeriod == "" {
@@ -747,7 +750,7 @@ func (s *Service) AIConfigInfo(ctx context.Context) (*AIConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &AIConfig{Providers: provs, Stats: *st}
+	out := &AIConfig{Providers: nonNilSlice(provs), Stats: *st}
 	for _, p := range provs {
 		if p.Enabled {
 			out.HasDefault = true
@@ -973,4 +976,19 @@ func checkInfos(cs []ai.Check) []HealthItemInfo {
 		})
 	}
 	return out
+}
+
+// nonNilSlice 把 nil 切片换成空切片。
+//
+// ★ 见 desktop/guard.go 里同名函数的说明：Go 编 JSON 时 nil 切片是
+// `null`，而界面把列表字段当数组用（`data.rows.length`），拿到 null
+// 直接抛异常。这个差别**只在没有数据时出现** —— 开发时账套里都是
+// 演示数据，怎么点都不崩；用户新建一个空账套点进去立刻炸。
+//
+// 放在 JSON 边界上把 nil 一律换掉，比让每个界面各写一遍 `?? []` 可靠。
+func nonNilSlice[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }

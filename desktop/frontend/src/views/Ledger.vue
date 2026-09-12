@@ -117,7 +117,7 @@ const dirVariant = (d) => (d === '借' ? 'debit' : d === '贷' ? 'credit' : 'mut
 
         <Spinner v-if="loading" />
         <EmptyState
-          v-else-if="!data || data.rows.length === 0"
+          v-else-if="!data?.rows?.length"
           title="该科目在这段区间内没有发生额"
           description="换个科目前缀或放宽日期区间试试"
         />

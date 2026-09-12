@@ -89,3 +89,25 @@ func recoverValue(op string) {
 		fmt.Fprintf(os.Stderr, "[panic] %s: %v\n%s\n", op, r, stack)
 	}
 }
+
+// nonNil 把 nil 切片换成空切片。
+//
+// ★ 为什么值得一个专门的函数
+//
+// Go 编 JSON 时，nil 切片是 `null`，空切片才是 `[]`。而界面把
+// 「列表字段」当数组用（`data.rows.length`），拿到 null 直接抛异常。
+//
+// 要命的是它**只在没有数据时出现**：开发时账套里都是演示数据，
+// 每个科目都有分录，怎么点都不会崩；用户新建一个空账套点开明细账，
+// 立刻炸。用户报的那条就是这样：
+//
+//	null is not an object (evaluating 'o.value.rows.length')
+//
+// 所以在 JSON 边界上把 nil 一律换掉。宁可多这一层，
+// 也不要让「有没有数据」决定界面崩不崩。
+func nonNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}

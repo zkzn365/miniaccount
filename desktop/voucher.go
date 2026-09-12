@@ -229,7 +229,8 @@ func (a *App) ContactOptions() (out []service.ContactOption, err error) {
 	if f != nil {
 		return nil, f
 	}
-	return wrap(svc.ContactOptions(a.context()))
+	opts, serr := svc.ContactOptions(a.context())
+	return wrap(nonNil(opts), serr)
 }
 
 // VoucherMeta 返回录入界面的全部元数据。
@@ -362,7 +363,8 @@ func (a *App) Attachments(req AttachmentQueryRequest) (out []service.AttachmentI
 	if owner == "" {
 		owner = "voucher"
 	}
-	return wrap(svc.ListAttachments(a.context(), owner, req.OwnerID))
+	list, serr := svc.ListAttachments(a.context(), owner, req.OwnerID)
+	return wrap(nonNil(list), serr)
 }
 
 // RemoveAttachmentRequest 是解除附件关联的参数。

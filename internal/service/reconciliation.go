@@ -263,7 +263,11 @@ func toReconciliationView(r *reconciliation.Report) *ReconciliationView {
 		Balanced:          r.Balanced(),
 		Difference:        r.Difference(),
 		Summary:           r.Summary(),
-		Notes:             r.Notes,
+		Notes:             nonNilSlice(r.Notes),
+		// Lines 与 Notes 一样预置成空切片：没有未达账项时是 nil，
+		// 而 Go 会把 nil 编成 JSON 的 null。上面那几个 conv() 已经
+		// 各自处理过了，这一行漏在外面。
+		Lines: []ReconciliationLineView{},
 	}
 	conv := func(items []reconciliation.Item) []ReconciliationItemView {
 		if len(items) == 0 {

@@ -263,7 +263,7 @@ async function postAll() {
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
   notify(`已生成 ${r.data.created} 张凭证`, 'success')
   if (r.data.failures?.length) {
-    notify(`有 ${r.data.failures.length} 条失败`, 'warn',
+    notify(`有 ${r.data.failures?.length ?? 0} 条失败`, 'warn',
       r.data.failures.slice(0, 8).join('\n'))
   }
   await load()

@@ -104,6 +104,10 @@ func (a *App) LedgerDetail(req LedgerRequest) (out *LedgerResult, err error) {
 		AccountPrefix: prefix,
 		From:          from.String(),
 		To:            to.String(),
+		// ★ 空切片而不是 nil：没有分录时 Go 会把 nil 编成 JSON 的 null，
+		// 而界面写的是 `data.rows.length` —— 用户报的那次崩溃就是这个。
+		// 有数据的账套永远测不出来，所以这里不能靠「反正有行」。
+		Rows: []LedgerRow{},
 	}
 	if acc, err := svc.DB().Accounts().GetByCode(ctx, prefix); err == nil {
 		result.AccountName = acc.Name

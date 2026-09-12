@@ -305,7 +305,7 @@ function barWidth(v) {
                   </td>
                 </tr>
 
-                <tr v-if="data.rows.length === 0">
+                <tr v-if="!data.rows?.length">
                   <td :colspan="visible.length + 4" class="px-4 py-6 text-center text-sm text-muted-foreground">
                     这一期间没有发生额
                   </td>

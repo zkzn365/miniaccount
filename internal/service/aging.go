@@ -124,10 +124,15 @@ func (s *Service) resolveAgingDate(ctx context.Context, s2 string) (calendar.Dat
 }
 
 func toAgingView(rep *aging.Report) *AgingView {
+	// ★ 预置成空切片：没有往来余额时这两个字段是 nil，
+	// 而 Go 会把 nil 编成 JSON 的 null —— 界面拿它当数组用就崩。
+	// 空账套（还没有任何往来）恰好是这个状态。
 	out := &AgingView{
 		AsOf: rep.AsOf.String(), Total: rep.Total,
 		DebitTotal: rep.DebitTotal, CreditTotal: rep.CreditTotal,
 		Summary: rep.Summary(),
+		Buckets: []AgingBucketView{},
+		Rows:    []AgingRowView{},
 	}
 	for _, b := range rep.Buckets {
 		out.Buckets = append(out.Buckets, AgingBucketView{
@@ -142,6 +147,12 @@ func toAgingView(rep *aging.Report) *AgingView {
 			ContactID: r.ContactID, ContactName: r.ContactName,
 			AccountCode: r.AccountCode, AccountName: r.AccountName,
 			Debits: r.Debits, Credits: r.Credits, Balance: r.Balance,
+			// ★ 行内的两个数组也要预置。某一行恰好没有明细（全额核销完、
+			// 只剩一个余额方向）时它们是 nil → JSON 里是 null →
+			// 界面拿它当数组用就崩。空账套到不了这个分支
+			//（没有行），只有有数据的账套才走得出来。
+			Buckets: []AgingBucketView{},
+			Items:   []AgingItemView{},
 		}
 		if row.ContactName == "" {
 			row.ContactName = fmt.Sprintf("往来#%d", r.ContactID)

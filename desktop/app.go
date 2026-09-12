@@ -751,7 +751,8 @@ func (a *App) AISuggestions(limit int) (out []sqlite.SuggestionRow, err error) {
 	if f != nil {
 		return nil, f
 	}
-	return wrap(svc.AI().Suggestions(a.context(), limit))
+	rows, serr := svc.AI().Suggestions(a.context(), limit)
+	return wrap(nonNil(rows), serr)
 }
 
 // AIAcceptRequest 是采纳一条 AI 建议的入参。
