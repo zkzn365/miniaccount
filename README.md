@@ -450,6 +450,32 @@ miniaccount version      # 版本号 + 构建时间
 它不会替你把 `src` 重新打一遍 —— 不重建的话，`src` 里的改动
 在用户双击的那个 `.app` 里根本不存在。
 
+★★★ **验证平台构建别用裸 `go build`，会给假绿灯。**
+
+平台前端是由 **`production` 构建标签**门控的 —— Wails 的
+`internal/app/app_production.go` 才是 `//go:build production` 那个
+import 平台前端的文件，`wails build` 默认带上它，裸跑 `go build` 不带。
+于是 `GOOS=windows go build ./desktop` **根本编不到 Windows 前端**，
+报「通过」但什么都没验。
+
+我们就这样漏过一次：`go.mod` 把 `go-webview2` 抬到了 v1.0.22，
+而 v1.0.22 改了 `MessageCallback` 的签名（`func(string)` →
+`func(string, *ICoreWebView2, *ICoreWebView2WebMessageReceivedEventArgs)`），
+Wails v2.10.2 只兼容 v1.0.19 —— 本地一路绿灯，CI 上 Windows 直接编译失败。
+
+本地能做的检查：
+
+```sh
+# Windows：纯 Go，交叉编译可行（标签要和 wails build 一致）
+GOOS=windows GOARCH=amd64 go build \
+  -tags production,native_webview2loader ./desktop
+```
+
+macOS 与 Linux 的界面版**只能在对应系统上验**：macOS 要用 `wails build`
+（裸 `go build` 会缺 Wails 的链接参数），Linux 要 cgo + GTK/WebKit 头文件，
+从别的系统交叉编译不了。所以改 `go.mod` 里的依赖版本之后，
+**用 `./build.sh` 走一遍，或者直接打标签让 CI 跑**。
+
 ### 发布：三个平台一起出包
 
 **标签就是版本号的唯一来源。** 不用改任何代码 —— CI 拿到标签之后，
