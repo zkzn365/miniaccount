@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { FolderOpen, FilePlus2, ShieldCheck, Sparkles, FolderSearch } from 'lucide-vue-next'
 import { api, notify, hasWails } from '@/lib/api'
 import { refreshBook } from '@/lib/book'
+import logo from '@/assets/logo.png'
 import Card from '@/components/ui/Card.vue'
 import CardHeader from '@/components/ui/CardHeader.vue'
 import CardTitle from '@/components/ui/CardTitle.vue'
@@ -253,9 +254,9 @@ async function doCreate() {
 <template>
   <div class="mx-auto flex max-w-3xl flex-col gap-5 pt-6">
     <div class="text-center">
-      <div class="mx-auto grid size-12 place-items-center rounded-xl bg-primary text-lg font-bold text-primary-foreground">
-        账
-      </div>
+      <!-- 与应用图标同一份素材：用户在外面看到的就是它。
+           alt 留空 —— 紧跟着的 h1 已经把「小账本」念出来了。 -->
+      <img :src="logo" alt="" class="mx-auto size-12" />
       <h1 class="mt-3 text-xl font-semibold">小账本</h1>
       <p class="mt-1 text-sm text-muted-foreground">
         面向中国小微企业的记账软件 · 账套与附件都在你自己的电脑上

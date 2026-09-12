@@ -12,6 +12,7 @@ import Button from '@/components/ui/Button.vue'
 import Toast from '@/components/ui/Toast.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import PageBoundary from '@/components/PageBoundary.vue'
+import logo from '@/assets/logo.png'
 
 const route = useRoute()
 const router = useRouter()
@@ -78,9 +79,12 @@ const currentPeriod = computed(() => {
       ]"
     >
       <div class="flex h-14 items-center gap-2 px-4">
-        <div class="grid size-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
-          账
-        </div>
+        <!-- ★ 用应用图标本身当界面 logo，而不是另写一个「账」字方块 ——
+             用户在外面看到的（Dock / 任务栏 / 访达）就是它，
+             里面再换一个样子等于两套品牌。
+             alt 留空：旁边的「小账本」已经把名字说出来了，
+             再加一遍读屏会念两次。 -->
+        <img :src="logo" alt="" class="size-7 shrink-0" />
         <span v-if="!collapsed" class="truncate text-sm font-semibold">小账本</span>
       </div>
 
