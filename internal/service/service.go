@@ -926,7 +926,7 @@ func (s *Service) InspectBackup(path string) (*backup.Manifest, error) {
 //
 // 恢复时用它判断兼容性：低版本备份恢复到高版本程序是安全的
 // （迁移只向前），反过来不行。
-var AppVersion = "0.2.2"
+var AppVersion = "0.2.3"
 
 // BuildStamp 是构建时间，由构建脚本用 -ldflags 注入。
 //
