@@ -767,6 +767,9 @@ test('★ 部门能新建、改名、停用（界面到后端整条路）', asyn
   const made = (after.data ?? []).find((d) => d.name === '回归测试部')
   assert.ok(made, `新建的部门没出现在列表里：${JSON.stringify(after.data)}`)
   assert.equal(after.data.length, n0 + 1)
+  // 不只是接口里有 —— 表格里也要真出现那一行
+  assert.ok(page.text().includes('回归测试部'),
+    `新建的部门没渲染到表格里，页面上是：${page.text().slice(0, 400)}`)
 
   // 停用
   busy: {
@@ -781,6 +784,46 @@ test('★ 部门能新建、改名、停用（界面到后端整条路）', asyn
   assert.equal(del.ok, true, `没人用的部门应当能删掉：${del.fault?.message}`)
   const final = await bundle.api.api.departments()
   assert.ok(!(final.data ?? []).some((d) => d.id === made.id), '删完还在列表里')
+})
+
+test('★ 辅助核算页四个维度都在，且各自读的是自己的档案', async () => {
+  // 用户要的是「辅助核算设置，这里面需要有客户、供应商、
+  // 本公司的部门和员工（需要迁移过来）」—— 四个缺一个，
+  // 那个维度在录凭证时就是空下拉，分录会被「缺少必需的辅助核算」拒绝。
+  //
+  // ★ 这一条跑在「建账」测试之后，当前账套是刚建出来的**空**账套，
+  // 所以断言取「表头 或 空态」，两者都说明这一页真的渲染出来了。
+  // 「有数据时表里真的出现那一行」由前面两条测试用真数据守。
+  await page.goto('/auxiliary')
+  await settle(80)
+
+  const wants = [
+    { tab: '客户', btn: '新建客户', marks: ['名称', '还没有客户'] },
+    { tab: '供应商', btn: '新建供应商', marks: ['税号', '还没有供应商'] },
+    { tab: '部门', btn: '新建部门', marks: ['上级', '还没有部门'] },
+    { tab: '员工', btn: '新增员工', marks: ['标准月工资', '还没有员工'] },
+  ]
+  for (const w of wants) {
+    await page.clickExact(w.tab)
+    await settle(60)
+    const t = page.text()
+    assert.ok(t.includes(w.btn),
+      `「${w.tab}」这一页没有「${w.btn}」按钮 —— 这一维建不了档案。实际：${t.slice(0, 300)}`)
+    assert.ok(w.marks.some((m) => t.includes(m)),
+      `「${w.tab}」这一页既没有表头也没有空态，说明根本没渲染：${t.slice(0, 400)}`)
+  }
+
+  // 四个绑定都要通（标签页画出来了不等于数据接上了）
+  const bound = [
+    ['客户', await bundle.api.api.contacts('customer')],
+    ['供应商', await bundle.api.api.contacts('supplier')],
+    ['部门', await bundle.api.api.departments()],
+    ['员工', await bundle.api.api.employees(false)],
+  ]
+  for (const [what, r] of bound) {
+    assert.equal(r.ok, true, `${what} 的绑定报错：${r.fault?.message}`)
+    assert.ok(Array.isArray(r.data), `${what} 返回的不是数组：${JSON.stringify(r.data)}`)
+  }
 })
 
 test('★ 工资页不再维护部门与员工档案（已迁到辅助核算）', async () => {
@@ -816,6 +859,8 @@ test('★ 往来单位（客户 / 供应商）能在界面上建、停用、删'
   assert.equal(after.data.length, n0 + 1)
   assert.equal(made.kind, 'customer', `在「客户」页新建的，类型却是 ${made.kind}`)
   if (made.enabled !== undefined) assert.equal(made.enabled, true, '新建出来就是停用的')
+  assert.ok(page.text().includes('回归测试客户'),
+    `新建的客户没渲染到表格里，页面上是：${page.text().slice(0, 400)}`)
 
   // 停用之后**仍然看得见**（能改回来），这是与旧下拉的根本区别
   const off = await bundle.api.api.saveContact({ ...made, enabled: false })
