@@ -541,6 +541,17 @@ func convertHealth(h *sqlite.PeriodHealth) *HealthInfo {
 // ClosingPreview 是结账预览。
 type ClosingPreview struct {
 	Period string `json:"period"`
+	// Year / Month 是这个预览针对的期间。
+	//
+	// ★ 补这两个字段是拿一次事故换来的：界面原来从预览对象上取
+	// `preview.year`，而它不存在 —— 取到 undefined，JSON 又把
+	// undefined 的键丢掉，Go 侧收到零值，结账直接报
+	// 「会计期间 0000-00 非法」，且结账/反结账**完全不可用**。
+	//
+	// 界面那边已经改成自己记住选中的期间（不该指望预览顺带带着它），
+	// 这里补上是因为「这个预览是关于哪个期间的」本来就该由它自己说清楚。
+	Year  int `json:"year"`
+	Month int `json:"month"`
 	// Steps 是结账会做的事，供界面逐步展示。
 	Steps []ClosingStep `json:"steps"`
 	// Income / Expense / Profit 是本期的损益。
@@ -582,7 +593,10 @@ func (s *Service) PreviewClose(ctx context.Context, k period.Key) (*ClosingPrevi
 	if err != nil {
 		return nil, err
 	}
-	out := &ClosingPreview{Period: k.String(), Health: convertHealth(h)}
+	out := &ClosingPreview{
+		Period: k.String(), Year: k.Year, Month: k.Month,
+		Health: convertHealth(h),
+	}
 	for _, st := range plan.Steps {
 		out.Steps = append(out.Steps, ClosingStep{
 			Key: st.Key, Title: st.Title, Detail: st.Detail,

@@ -31,6 +31,22 @@ const health = ref(null)
 const dialog = ref(null) // 'close' | 'reopen' | 'health'
 const busy = ref(false)
 
+// ★ 弹窗针对的是**哪一个期间**，单独记一份。
+//
+// 原来 doClose / doReopen 从 preview 上取 year/month，而
+// `ClosingPreview` 里根本没有这两个字段（它只有 `period` 字符串）——
+// 于是取到 undefined，JSON.stringify 又把 undefined 的键丢掉，
+// Go 侧收到的是零值：
+//
+//     会计期间 0000-00 非法
+//
+// 结账和反结账因此**完全不可用**，而且报错信息指向的是「0000-00」，
+// 看不出问题出在「字段没传过去」。
+//
+// 期间是打开弹窗那一刻选定的，就应当由界面自己拿着 ——
+// 不要指望后端返回的预览对象顺带带着它。
+const target = ref({ year: 0, month: 0, label: '' })
+
 async function load() {
   loading.value = true
   const r = await api.periods()
@@ -53,6 +69,7 @@ function tone(p) {
 
 async function openClose(p) {
   dialog.value = 'close'
+  target.value = { year: p.year, month: p.month, label: p.label }
   preview.value = null
   health.value = null
   const [pv, h] = await Promise.all([
@@ -66,6 +83,7 @@ async function openClose(p) {
 
 async function openReopen(p) {
   dialog.value = 'reopen'
+  target.value = { year: p.year, month: p.month, label: p.label }
   preview.value = { period: p.label, reversed: [], steps: [] }
   const h = await api.health({ year: p.year, month: p.month })
   health.value = h.ok ? h.data : null
@@ -83,7 +101,10 @@ async function doClose() {
   if (!operator.value.trim()) { notify('请先填写操作人 —— 记账凭证需要有记账签章', 'warn'); return }
   localStorage.setItem('operator', operator.value.trim())
   busy.value = true
-  const r = await api.close({ year: preview.value.year, month: preview.value.month, by: operator.value.trim() })
+  const r = await api.close({
+    year: target.value.year, month: target.value.month,
+    by: operator.value.trim(),
+  })
   busy.value = false
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
   notify(`已结账 ${r.data.period}${r.data.voucherCreated ? `，结转凭证 ${r.data.voucherNo}` : '（本期无损益）'}`, 'success')
@@ -94,7 +115,10 @@ async function doClose() {
 async function doReopen() {
   if (!operator.value.trim()) { notify('请先填写操作人', 'warn'); return }
   busy.value = true
-  const r = await api.reopen({ year: preview.value.year, month: preview.value.month, by: operator.value.trim() })
+  const r = await api.reopen({
+    year: target.value.year, month: target.value.month,
+    by: operator.value.trim(),
+  })
   busy.value = false
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
   const n = r.data.reversed?.length ?? 0

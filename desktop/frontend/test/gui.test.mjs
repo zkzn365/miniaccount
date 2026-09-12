@@ -647,6 +647,75 @@ test('★ 停用 / 启用能来回切（否则停用了就再也开不回来）'
 })
 
 // ---------------------------------------------------------------------------
+// 账期管理：结账 / 反结账
+// ---------------------------------------------------------------------------
+//
+// ★ 这一条是拿用户报回来的 bug 换来的：
+//
+//     会计期间 0000-00 非法
+//
+// 界面从 `preview.year` 取期间，而 `ClosingPreview` 里根本没有这两个
+// 字段（只有 `period` 字符串）—— 取到 undefined，JSON.stringify 又把
+// undefined 的键丢掉，Go 收到零值。于是**结账和反结账完全不可用**，
+// 而且报错指向「0000-00」，看不出是「字段没传过去」。
+//
+// 这类 bug 的共同点是：按钮点得动、弹窗也正常，只有最后那一下才炸。
+// 所以这里必须真的点下去，不能只看页面渲染出来了没有。
+
+test('★ 结账真的能结掉（不是只把弹窗打开）', async () => {
+  await page.goto('/periods')
+  await settle(80)
+
+  // 结账要签名（记账凭证需要有记账签章），先把操作人填上。
+  // 这一步是测试自己发现的：不填的话 doClose 直接 warn 返回，
+  // 断言只会看到「期间还是 open」，看不出是卡在哪。
+  await page.type(page.input('input[placeholder="结账 / 反结账时签名用"]'), '回归测试员')
+  await settle(30)
+
+  const before = await bundle.api.api.periods()
+  assert.equal(before.ok, true, before.fault?.message)
+  const openOne = (before.data.periods ?? []).find((p) => p.status === 'open')
+  assert.ok(openOne, `演示账套里没有可结账的期间：${JSON.stringify(before.data.periods)}`)
+
+  // 打开结账弹窗（这一步原来就是好的，问题在下一步）
+  await page.click('结账')
+  await settle(120)
+
+  // ★ 弹窗里必须带着「结哪个期间」。缺了它，请求里的 year/month 就是
+  // undefined，Go 侧收到 0 —— 报的就是「会计期间 0000-00 非法」。
+  const preview = await bundle.api.api.previewClose({ year: openOne.year, month: openOne.month })
+  assert.equal(preview.ok, true, preview.fault?.message)
+  assert.equal(preview.data.year, openOne.year,
+    'ClosingPreview 没带 year —— 界面从它取值就会拿到 undefined')
+  assert.equal(preview.data.month, openOne.month, 'ClosingPreview 没带 month')
+
+  // 真点「确认结账」
+  await page.click('确认结账')
+  await settle(150)
+
+  const after = await bundle.api.api.periods()
+  const same = (after.data.periods ?? []).find(
+    (p) => p.year === openOne.year && p.month === openOne.month)
+  const toast = bundle.api.notices.items.map((n) => n.message).join(' | ')
+  assert.equal(same.status, 'closed',
+    `结账没生效，${openOne.label} 还是 ${same.status}。提示：${toast || '（没有提示）'}` +
+    '\n若提示是「0000-00 非法」，说明请求里的 year/month 没传过去')
+
+  // 收尾：反结账回来
+  await page.goto('/periods')
+  await settle(80)
+  await page.click('反结账')
+  await settle(120)
+  await page.click('确认反结账')
+  await settle(150)
+  const back = await bundle.api.api.periods()
+  const reopened = (back.data.periods ?? []).find(
+    (p) => p.year === openOne.year && p.month === openOne.month)
+  assert.equal(reopened.status, 'open',
+    `反结账没生效，${openOne.label} 还是 ${reopened.status}`)
+})
+
+// ---------------------------------------------------------------------------
 // 部门与人事异动
 // ---------------------------------------------------------------------------
 //
