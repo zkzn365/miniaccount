@@ -93,6 +93,16 @@ func (m Money) DivInt(n int64) (Money, error) {
 	return divRoundHalfUp(int64(m), n), nil
 }
 
+// MulDiv 计算 a*b/div，四舍五入到分。
+//
+// ★ 为什么不是 a.MulInt(b).DivInt(div)：那两步的中间结果会溢出。
+// 会计场景里「金额 × 百万分比 ÷ 1000000」到处都是（残值率、税率、
+// 摊销比例），而金额上限 9e16 分乘上 1e6 早就出 int64 了。
+// 这里用 128 位中间结果，一次算完。
+func MulDiv(a Money, b, div int64) Money {
+	return mulDivRoundHalfUp(int64(a), b, div)
+}
+
 // Sum 累加一组金额，空切片返回 Zero。
 func Sum(ms ...Money) Money {
 	var s Money

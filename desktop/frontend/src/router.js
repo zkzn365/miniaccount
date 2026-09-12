@@ -22,6 +22,7 @@ const routes = [
   { path: '/ai', name: 'ai', component: () => import('./views/AIAssistant.vue'), meta: { title: 'AI 记账助手', icon: 'Sparkles' } },
   { path: '/accounts', name: 'accounts', component: () => import('./views/Accounts.vue'), meta: { title: '科目管理', icon: 'ListTree' } },
   { path: '/auxiliary', name: 'auxiliary', component: () => import('./views/Auxiliary.vue'), meta: { title: '辅助核算', icon: 'Shapes' } },
+  { path: '/assets', name: 'assets', component: () => import('./views/Assets.vue'), meta: { title: '固定资产', icon: 'Building2' } },
   { path: '/vat', name: 'vat', component: () => import('./views/VAT.vue'), meta: { title: '增值税', icon: 'Percent' } },
   { path: '/audit', name: 'audit', component: () => import('./views/AuditLog.vue'), meta: { title: '操作日志', icon: 'ScrollText' } },
   { path: '/settings', name: 'settings', component: () => import('./views/Settings.vue'), meta: { title: '设置与备份', icon: 'Settings' } },

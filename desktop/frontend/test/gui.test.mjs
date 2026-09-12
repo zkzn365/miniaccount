@@ -246,6 +246,13 @@ const page = {
   },
 }
 
+/** nextPeriodLabel 给出某期间的下一个月，如 2026-01 → 2026-02。 */
+function nextPeriodLabel(p) {
+  const m = p.month === 12 ? 1 : p.month + 1
+  const y = p.month === 12 ? p.year + 1 : p.year
+  return `${y}-${String(m).padStart(2, '0')}`
+}
+
 /** 等 promise 链与渲染跑完。 */
 async function settle(times = 12) {
   for (let i = 0; i < times; i++) {
@@ -779,6 +786,160 @@ test('★ 凭证录完只是草稿，结账时才过账', async () => {
   await settle(120)
   await page.click('确认反结账')
   await settle(150)
+})
+
+// ★ 固定资产与费用摊销：登记 → 计提 → 草稿凭证。
+//
+// 这两件事是唯一两笔「什么业务都没发生、但每月必须记账」的分录。
+// 这一条守三件事：
+//
+//   1. 固定资产**次月**起提、待摊项目**当月**就摊（两条规则不一样，
+//      而且都不能记反）；
+//   2. 计提出来的凭证是**草稿**（与手工凭证同一条规则，不进总账）；
+//   3. 计提预览里，金额为 0 的必须给出原因 —— 算成 0 却不说话，
+//      比算错还难查。
+test('★ 固定资产次月起提、待摊当月就摊，计提出来是草稿', async () => {
+  await page.goto('/assets')
+  await settle(80)
+
+  // 用**第一个**已启用期间：这样次月也是已启用的，
+  // 「次月起提」才验证得了（用最后一个的话，次月还没启用，提不了）
+  const per = await bundle.api.api.periods()
+  const opens = (per.data.periods ?? []).filter((p) => p.status === 'open')
+  assert.ok(opens.length >= 2, `已启用期间不足两个：${opens.length}`)
+  const first = opens[0]
+  const next = opens[1]
+  assert.equal(nextPeriodLabel(first), next.label, '已启用期间不连续，这条测试的前提不成立')
+  const day = `${first.year}-${String(first.month).padStart(2, '0')}-15`
+
+  // ---- 1. 登记一张固定资产（走界面）----
+  await page.click('登记固定资产')
+  await settle(60)
+  await page.type(page.input('input[placeholder="笔记本电脑"]'), '回归测试电脑')
+  await page.type(page.input('input[placeholder="12000.00"]'), '12000')
+  await page.type(page.input('input[placeholder="36"]'), '36')
+  await page.type(page.input('input[placeholder="2025-01-10"]'), day)
+  // 部门：折旧费用科目按部门辅助核算，必须选一个。
+  // ★ 按 option 的 value 挑（数字 id），不能按「value 非空」——
+  // 「（不挂部门）」那一项的 value 在浏览器里回落到它的文字，非空但不是部门。
+  const deptSel = [...win.document.body.querySelectorAll('select')]
+    .find((sel) => [...sel.options].some((o) => /^\d+$/.test(o.value)))
+  assert.ok(deptSel, '固定资产表单里没有部门下拉 —— 折旧挂不上部门，计提那天会被拒绝')
+  const deptOpt = [...deptSel.options].find((o) => /^\d+$/.test(o.value))
+  deptSel.value = deptOpt.value
+  deptSel.dispatchEvent(new win.Event('change', { bubbles: true }))
+  await settle(30)
+  await page.click('保存')
+  await settle(150)
+
+  const after = await bundle.api.api.assets()
+  assert.equal(after.ok, true, after.fault?.message)
+  const made = (after.data.assets ?? []).find((a) => a.name === '回归测试电脑')
+  assert.ok(made, `登记的固定资产没出现在档案里。提示：${
+    bundle.api.notices.items.map((n) => n.message).join(' | ') || '（无）'}`)
+  // 12,000 × (1 − 5%) ÷ 36 = 316.666… → 316.67
+  assert.equal(made.monthlyAmount, 31667, `月折旧额 = ${made.monthlyAmount}，期望 31667 分`)
+  assert.equal(made.firstPeriod, next.label,
+    `★ 投入使用 ${day}，起提期间应是次月 ${next.label}，实际 ${made.firstPeriod}`)
+  assert.ok(page.text().includes('回归测试电脑'),
+    `登记的资产没渲染到表格里：${page.text().slice(0, 300)}`)
+
+  // ---- 2. 待摊项目：受益期从当月起算 ----
+  await page.clickExact('费用摊销')
+  await settle(60)
+  await page.click('新增待摊项目')
+  await settle(60)
+  await page.type(page.input('input[placeholder="一年期房租 / 办公室装修"]'), '回归测试待摊')
+  await page.type(page.input('input[placeholder="60000.00"]'), '6000')
+  await page.type(page.input('input[placeholder="12"]'), '6')
+  await page.type(page.input('input[placeholder="2025-01-01"]'), day)
+  const deptSel2 = [...win.document.body.querySelectorAll('select')]
+    .find((sel) => [...sel.options].some((o) => /^\d+$/.test(o.value)))
+  if (deptSel2) {
+    const o = [...deptSel2.options].find((x) => /^\d+$/.test(x.value))
+    deptSel2.value = o.value
+    deptSel2.dispatchEvent(new win.Event('change', { bubbles: true }))
+    await settle(30)
+  }
+  await page.click('保存')
+  await settle(150)
+
+  const am = await bundle.api.api.assets()
+  const madeAm = (am.data.amortizations ?? []).find((m) => m.name === '回归测试待摊')
+  assert.ok(madeAm, `登记的待摊项目没出现：${JSON.stringify(am.data.amortizations)}`)
+  assert.equal(madeAm.monthlyAmount, 100000, `月摊销额 = ${madeAm.monthlyAmount}，期望 100000 分`)
+  assert.equal(madeAm.firstPeriod, first.label,
+    `★ 待摊项目受益期从**当月**起算，起摊期间应是 ${first.label}，实际 ${madeAm.firstPeriod}`)
+
+  // ---- 3. 计提预览：0 的必须说原因，有的要算对 ----
+  const pv = await bundle.api.api.previewAccrual({ year: first.year, month: first.month })
+  assert.equal(pv.ok, true, pv.fault?.message)
+  const assetRow = (pv.data.rows ?? []).find((r) => r.name === '回归测试电脑')
+  assert.ok(assetRow, '预览里没有那张固定资产')
+  assert.equal(assetRow.amount, 0, `★ 投入使用当月不该计提，实际 ${assetRow.amount}`)
+  assert.ok(/次月起提/.test(assetRow.reason || ''),
+    `★ 算成 0 却不说原因（比算错还难查）：${JSON.stringify(assetRow)}`)
+  const amRow = (pv.data.rows ?? []).find((r) => r.name === '回归测试待摊')
+  assert.ok(amRow, '预览里没有那个待摊项目')
+  assert.equal(amRow.amount, 100000, `★ 待摊当月就该摊第一期，实际 ${amRow.amount}`)
+
+  await page.goto('/assets')
+  await settle(80)
+  await page.click('预览本期计提')
+  await settle(150)
+  // ★ 断言要落在**弹窗里那一行**上，不能用整页文本：
+  // 「次月起提」这几个字在保存成功的提示里也有，整页搜索会假绿。
+  const rows = [...win.document.body.querySelectorAll('tbody tr')]
+  const row = rows.find((tr) => tr.textContent.includes('回归测试电脑'))
+  assert.ok(row, `预览弹窗里没有那张固定资产那一行：${page.text().slice(0, 400)}`)
+  assert.ok(/次月起提/.test(row.textContent),
+    `★ 金额算成 0 却没在界面上说原因（比算错还难查）：${row.textContent}`)
+  await page.click('取消')
+  await settle(30)
+
+  // ---- 4. 当月计提：只有摊销那一张 ----
+  await page.type(page.input('input[placeholder="操作人"]'), '回归测试员')
+  await settle(30)
+  for (const n of [...bundle.api.notices.items]) bundle.api.dismiss(n.id)
+  const acc1 = await bundle.api.api.accrue({ year: first.year, month: first.month, by: '回归测试员' })
+  assert.equal(acc1.ok, true, acc1.fault?.message)
+  assert.ok(acc1.data.amortizationVoucherId > 0, `应生成摊销凭证：${JSON.stringify(acc1.data)}`)
+  assert.equal(acc1.data.depreciationVoucherId, 0,
+    '★ 固定资产当月不提，不该生成折旧凭证')
+
+  const v = await bundle.api.api.voucherDetail(acc1.data.amortizationVoucherId)
+  assert.equal(v.data.status, 'draft', `★ 计提凭证应当是草稿，实际 ${v.data.status}`)
+  assert.equal(v.data.no, '', `★ 草稿不该有凭证号，实际 ${v.data.no}`)
+  assert.equal(v.data.source, 'amortization', `凭证来源 = ${v.data.source}`)
+  // ★ 没结算就还没进账
+  const led = await bundle.api.api.ledgerDetail({ accountPrefix: '1801' })
+  assert.equal((led.data.rows ?? []).length, 0,
+    `★ 还没结算，长期待摊费用就有数了：${JSON.stringify(led.data.rows?.slice(0, 2))}`)
+
+  // 同一期不能再提一次
+  const again = await bundle.api.api.accrue({ year: first.year, month: first.month, by: '回归测试员' })
+  assert.equal(again.ok, false, '★ 同一期不该能提两次 —— 重复提会让费用凭空多一块，而且不报错')
+  assert.ok(/已经(计提|摊销)过/.test(again.fault?.message ?? ''),
+    `重复计提的错误要说清楚是重复：${again.fault?.message}`)
+
+  // ---- 5. 次月：这回固定资产提上了 ----
+  const acc2 = await bundle.api.api.accrue({ year: next.year, month: next.month, by: '回归测试员' })
+  assert.equal(acc2.ok, true, acc2.fault?.message)
+  assert.ok(acc2.data.depreciationVoucherId > 0,
+    '★ 次月应当生成折旧凭证（当月增加当月不提，次月起提）')
+  const dep = await bundle.api.api.voucherDetail(acc2.data.depreciationVoucherId)
+  assert.equal(dep.data.lines.length, 2, `折旧凭证应当一借一贷：${JSON.stringify(dep.data.lines)}`)
+  assert.equal(dep.data.lines[0].accountCode, '560205', '借方应是管理费用—折旧费')
+  assert.equal(dep.data.lines[1].accountCode, '1602', '贷方应是累计折旧')
+  assert.ok(/管理/.test(dep.data.lines[0].auxDesc || ''),
+    `★ 折旧凭证的借方缺部门辅助核算（凭证上显示的是「部门#1」也说明名字没解析）：${dep.data.lines[0].auxDesc}`)
+
+  // 首页待办要把「待过账」和「结账时过账」说清楚（别让人满界面找过账按钮）
+  await page.goto('/dashboard')
+  await settle(80)
+  const t = page.text()
+  assert.ok(/张凭证待过账/.test(t), `首页没提示待过账：${t.slice(0, 300)}`)
+  assert.ok(/结账/.test(t), `首页该说清楚过账发生在结账：${t.slice(0, 300)}`)
 })
 
 test('★ 结账真的能结掉（不是只把弹窗打开）', async () => {

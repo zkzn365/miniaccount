@@ -661,7 +661,7 @@ func (s *Service) Close(ctx context.Context, k period.Key, postingBy string) (*C
 	out := &CloseResult{
 		Period: k.String(), VoucherNo: res.VoucherNo,
 		VoucherID: res.VoucherID, VoucherCreated: res.Planned(),
-		Summary: res.Plan.Summary(),
+		Summary:   res.Plan.Summary(),
 		PostedNos: nonNilSlice(res.PostedNos()),
 	}
 	if res.PostedDrafts != nil {

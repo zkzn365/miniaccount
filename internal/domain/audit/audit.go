@@ -75,6 +75,18 @@ const (
 	// 而 Save 那条日志里看不出是哪一种 —— 它只有改后的名字。
 	ActionDepartmentDelete Action = "department.delete"
 
+	// 固定资产与费用摊销。
+	//
+	// ★ 这几个动作必须留痕：折旧和摊销是「什么业务都没发生、但每月
+	// 必须记账」的两笔分录，账上凭空多一笔费用时，
+	// 「谁在什么时候改过这张卡的原值 / 年限」是唯一的解释来源。
+	ActionAssetSave    Action = "asset.save"
+	ActionAssetDispose Action = "asset.dispose"
+	ActionAssetDelete  Action = "asset.delete"
+	ActionAssetAccrue  Action = "asset.accrue"
+	ActionAmortSave    Action = "amortization.save"
+	ActionAmortDelete  Action = "amortization.delete"
+
 	// 人事异动的三个动作。
 	//
 	// ★ 也单列，不并进 ActionEmployeeSave。
@@ -163,6 +175,12 @@ var actionLabels = map[Action]string{
 	ActionEmployeeSave:     "维护员工档案",
 	ActionDepartmentSave:   "维护部门",
 	ActionDepartmentDelete: "删除部门",
+	ActionAssetSave:        "维护固定资产",
+	ActionAssetDispose:     "处置固定资产",
+	ActionAssetDelete:      "删除固定资产",
+	ActionAssetAccrue:      "计提折旧与摊销",
+	ActionAmortSave:        "维护待摊项目",
+	ActionAmortDelete:      "删除待摊项目",
 
 	ActionEmployeeResign:   "员工离职",
 	ActionEmployeeTransfer: "员工转部门",

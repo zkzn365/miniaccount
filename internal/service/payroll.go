@@ -360,7 +360,7 @@ type PayrollRunDetail struct {
 	AccrualVoucherNo string `json:"accrualVoucherNo"`
 	// AccrualVoucherLabel 是给界面显示的标识（草稿显示「草稿 #12」）。
 	AccrualVoucherLabel string `json:"accrualVoucherLabel"`
-	PaymentVoucherNo string `json:"paymentVoucherNo"`
+	PaymentVoucherNo    string `json:"paymentVoucherNo"`
 	// PaymentVoucherLabel 同上。
 	PaymentVoucherLabel string `json:"paymentVoucherLabel"`
 

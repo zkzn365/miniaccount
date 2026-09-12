@@ -28,6 +28,8 @@ export function AccountOptions():Promise<Array<service.AccountOption>>;
 
 export function Accounts():Promise<service.AccountsView>;
 
+export function Accrue(arg1:main.AccrueRequest):Promise<service.AccrualResult>;
+
 export function ActiveContacts(arg1:string,arg2:string):Promise<Array<service.ActiveContactsView>>;
 
 export function AdjustSalary(arg1:main.AdjustSalaryRequest):Promise<service.EmployeeView>;
@@ -37,6 +39,8 @@ export function AgingReport(arg1:main.AgingRequest):Promise<service.AgingView>;
 export function AppVersion():Promise<string>;
 
 export function ApproveClaim(arg1:main.ClaimActionRequest):Promise<service.ClaimView>;
+
+export function Assets():Promise<service.AssetsView>;
 
 export function AttachmentPath(arg1:string):Promise<string>;
 
@@ -106,6 +110,10 @@ export function DefaultBookDir():Promise<string>;
 
 export function DeleteAccount(arg1:string):Promise<void>;
 
+export function DeleteAmortization(arg1:number):Promise<void>;
+
+export function DeleteAsset(arg1:number):Promise<void>;
+
 export function DeleteContact(arg1:number):Promise<void>;
 
 export function DeleteDepartment(arg1:number):Promise<void>;
@@ -115,6 +123,8 @@ export function DeleteVoucher(arg1:number):Promise<void>;
 export function DepartmentUsageOf(arg1:number):Promise<service.DepartmentUsage>;
 
 export function Departments():Promise<Array<service.Department>>;
+
+export function DisposeAsset(arg1:main.DisposeAssetRequest):Promise<service.AssetView>;
 
 export function Employees(arg1:boolean):Promise<Array<service.EmployeeView>>;
 
@@ -184,6 +194,8 @@ export function PostPayroll(arg1:number,arg2:string):Promise<service.PayrollRunD
 
 export function PreviewAIPrompt(arg1:string):Promise<service.AIPromptPreview>;
 
+export function PreviewAccrual(arg1:main.PeriodRequest):Promise<service.AccrualPreview>;
+
 export function PreviewClose(arg1:main.PeriodRequest):Promise<service.ClosingPreview>;
 
 export function RejectAIAgentItem(arg1:main.AIAgentItemRequest):Promise<void>;
@@ -217,6 +229,10 @@ export function SaveAIPromptConfig(arg1:service.AIPromptInput):Promise<void>;
 export function SaveAIProvider(arg1:sqlite.AIProviderConfig):Promise<number>;
 
 export function SaveAccount(arg1:service.AccountInput):Promise<service.AccountRow>;
+
+export function SaveAmortization(arg1:main.AmortizationRequest):Promise<service.AmortizationView>;
+
+export function SaveAsset(arg1:main.AssetRequest):Promise<service.AssetView>;
 
 export function SaveAuditSettings(arg1:service.LogSettings):Promise<void>;
 
@@ -281,6 +297,8 @@ export function VATPolicyStatus():Promise<service.VATPolicyStatus>;
 export function VATReference():Promise<service.VATReferenceInfo>;
 
 export function VerifyAuditLog():Promise<audit.VerifyResult>;
+
+export function VoidAmortization(arg1:main.VoidAmortizationRequest):Promise<service.AmortizationView>;
 
 export function VoucherDetail(arg1:number):Promise<service.VoucherDetail>;
 

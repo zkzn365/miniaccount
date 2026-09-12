@@ -109,7 +109,6 @@ type ClaimView struct {
 	// 草稿给「草稿 #12」—— 草稿不占号，空着的话用户看不出成没成。
 	VoucherLabel string `json:"voucherLabel"`
 
-
 	// CanEdit / CanApprove / CanPost 由服务层算好，界面照着禁用按钮。
 	CanEdit    bool `json:"canEdit"`
 	CanApprove bool `json:"canApprove"`

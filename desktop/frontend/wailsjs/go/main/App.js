@@ -46,6 +46,10 @@ export function Accounts() {
   return window['go']['main']['App']['Accounts']();
 }
 
+export function Accrue(arg1) {
+  return window['go']['main']['App']['Accrue'](arg1);
+}
+
 export function ActiveContacts(arg1, arg2) {
   return window['go']['main']['App']['ActiveContacts'](arg1, arg2);
 }
@@ -64,6 +68,10 @@ export function AppVersion() {
 
 export function ApproveClaim(arg1) {
   return window['go']['main']['App']['ApproveClaim'](arg1);
+}
+
+export function Assets() {
+  return window['go']['main']['App']['Assets']();
 }
 
 export function AttachmentPath(arg1) {
@@ -202,6 +210,14 @@ export function DeleteAccount(arg1) {
   return window['go']['main']['App']['DeleteAccount'](arg1);
 }
 
+export function DeleteAmortization(arg1) {
+  return window['go']['main']['App']['DeleteAmortization'](arg1);
+}
+
+export function DeleteAsset(arg1) {
+  return window['go']['main']['App']['DeleteAsset'](arg1);
+}
+
 export function DeleteContact(arg1) {
   return window['go']['main']['App']['DeleteContact'](arg1);
 }
@@ -220,6 +236,10 @@ export function DepartmentUsageOf(arg1) {
 
 export function Departments() {
   return window['go']['main']['App']['Departments']();
+}
+
+export function DisposeAsset(arg1) {
+  return window['go']['main']['App']['DisposeAsset'](arg1);
 }
 
 export function Employees(arg1) {
@@ -358,6 +378,10 @@ export function PreviewAIPrompt(arg1) {
   return window['go']['main']['App']['PreviewAIPrompt'](arg1);
 }
 
+export function PreviewAccrual(arg1) {
+  return window['go']['main']['App']['PreviewAccrual'](arg1);
+}
+
 export function PreviewClose(arg1) {
   return window['go']['main']['App']['PreviewClose'](arg1);
 }
@@ -424,6 +448,14 @@ export function SaveAIProvider(arg1) {
 
 export function SaveAccount(arg1) {
   return window['go']['main']['App']['SaveAccount'](arg1);
+}
+
+export function SaveAmortization(arg1) {
+  return window['go']['main']['App']['SaveAmortization'](arg1);
+}
+
+export function SaveAsset(arg1) {
+  return window['go']['main']['App']['SaveAsset'](arg1);
 }
 
 export function SaveAuditSettings(arg1) {
@@ -552,6 +584,10 @@ export function VATReference() {
 
 export function VerifyAuditLog() {
   return window['go']['main']['App']['VerifyAuditLog']();
+}
+
+export function VoidAmortization(arg1) {
+  return window['go']['main']['App']['VoidAmortization'](arg1);
 }
 
 export function VoucherDetail(arg1) {

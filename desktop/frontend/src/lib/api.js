@@ -290,6 +290,18 @@ export const api = {
   schemeTemplate: (name) => call(A().SchemeTemplate, name),
   saveInsuranceSchemes: (list) => call(A().SaveInsuranceSchemes, list),
   departments: () => call(A().Departments),
+  // 固定资产与费用摊销。金额一律传字符串元（"12000.00"），
+  // 与凭证录入同一条路 —— 不让 float 在两边之间来回跑。
+  assets: () => call(A().Assets),
+  saveAsset: (req) => call(A().SaveAsset, req),
+  disposeAsset: (req) => call(A().DisposeAsset, req),
+  deleteAsset: (id) => call(A().DeleteAsset, id),
+  saveAmortization: (req) => call(A().SaveAmortization, req),
+  voidAmortization: (req) => call(A().VoidAmortization, req),
+  deleteAmortization: (id) => call(A().DeleteAmortization, id),
+  // 计提预览（不写库）与计提（生成草稿凭证，过账在账期结算）
+  previewAccrual: (req) => call(A().PreviewAccrual, req),
+  accrue: (req) => call(A().Accrue, req),
   // 往来单位档案（辅助核算：客户 / 供应商 / 股东 / 其他单位）。
   // ★ 与 contactOptions 的区别：这个**包含已停用的**，是给管理界面用的；
   // 那个只列启用中的，是给凭证录入的下拉用的。用同一个的话，
@@ -638,6 +650,68 @@ export const mockApp = {
     { id: 2, code: '002', name: '销售部', fullName: '销售部', enabled: true, parentId: null, remark: '' },
   ],
   SaveDepartment: async () => 1,
+  Assets: async () => ({
+    assets: [{
+      id: 1, code: 'SB-001', name: '笔记本电脑', category: 'electronic',
+      categoryLabel: '电子设备', deptId: 1, deptName: '管理部门',
+      origValue: 1200000, salvagePpm: 50000, salvageRateLabel: '5%',
+      salvageValue: 60000, usefulMonths: 36, startDate: '2025-01-10',
+      expenseAccount: '560205', accumAccount: '1602',
+      status: 'in_use', statusLabel: '在用', disposedDate: '',
+      remark: '', monthlyAmount: 31667, depreciated: 31667, netValue: 1168333,
+      firstPeriod: '2025-02', lastPeriod: '2028-01', minYears: 3,
+      lifeWarning: '', canDelete: false,
+      reason: '已经计提过折旧，不能删除（折旧凭证是账的一部分）；不再使用请改用「处置」——处置当月照提，次月起停',
+    }],
+    amortizations: [{
+      id: 1, code: '', name: '一年期房租', deptId: 1, deptName: '管理部门',
+      total: 6000000, months: 12, startDate: '2025-01-01',
+      expenseAccount: '560210', assetAccount: '1801',
+      status: 'active', statusLabel: '摊销中', remark: '',
+      monthlyAmount: 500000, amortized: 500000, remaining: 5500000,
+      firstPeriod: '2025-01', lastPeriod: '2025-12',
+      canDelete: false, reason: '',
+    }],
+    defaults: {
+      depreciationExpense: '560205', accumDepreciation: '1602',
+      assetAccount: '1601', amortExpense: '560210', amortAsset: '1801',
+    },
+    categories: [
+      { value: 'building', label: '房屋、建筑物', minYears: 20, minMonths: 240 },
+      { value: 'machine', label: '机器、机械和其他生产设备', minYears: 10, minMonths: 120 },
+      { value: 'furniture', label: '器具、工具、家具', minYears: 5, minMonths: 60 },
+      { value: 'vehicle', label: '运输工具（不含飞机、火车、轮船）', minYears: 4, minMonths: 48 },
+      { value: 'electronic', label: '电子设备', minYears: 3, minMonths: 36 },
+    ],
+  }),
+  SaveAsset: async () => ({ id: 1 }),
+  DisposeAsset: async () => ({ id: 1, status: 'disposed', statusLabel: '已处置' }),
+  DeleteAsset: async () => null,
+  SaveAmortization: async () => ({ id: 1 }),
+  VoidAmortization: async () => ({ id: 1, status: 'voided', statusLabel: '已作废' }),
+  DeleteAmortization: async () => null,
+  PreviewAccrual: async () => ({
+    period: '2025-02',
+    rows: [
+      { kind: 'asset', kindLabel: '固定资产折旧', id: 1, name: '笔记本电脑',
+        amount: 31667, debitAccount: '560205', debitName: '管理费用—折旧费',
+        creditAccount: '1602', creditName: '累计折旧', auxDesc: '管理部门', reason: '' },
+      { kind: 'asset', kindLabel: '固定资产折旧', id: 2, name: '本月新买的打印机',
+        amount: 0, debitAccount: '560205', debitName: '管理费用—折旧费',
+        creditAccount: '1602', creditName: '累计折旧', auxDesc: '管理部门',
+        reason: '尚未开始计提（投入使用 2025-02-10，次月起提）' },
+      { kind: 'amortization', kindLabel: '费用摊销', id: 1, name: '一年期房租',
+        amount: 500000, debitAccount: '560210', debitName: '管理费用—租赁费',
+        creditAccount: '1801', creditName: '长期待摊费用', auxDesc: '管理部门', reason: '' },
+    ],
+    depreciationTotal: 31667, amortizationTotal: 500000,
+    depreciationDone: false, amortizationDone: false,
+    previousPeriod: '2025-01', previousMissing: 0,
+  }),
+  Accrue: async () => ({
+    period: '2025-02', depreciationVoucherId: 21, amortizationVoucherId: 22,
+    depreciationTotal: 31667, amortizationTotal: 500000, skipped: [],
+  }),
   DeleteDepartment: async () => null,
   DepartmentUsageOf: async () => ({ employees: 2, children: 0, entries: 0, bankFlows: 0, bankRules: 0, invoices: 0, claims: 0 }),
   TaxTableInfo: async () => ({ name: '个人所得税预扣率表一', note: '税率与级距全部来自可配置的参数表', brackets: [

@@ -113,6 +113,10 @@ const (
 	SourceClosing Source = "closing" // 期末结转损益
 	SourceOpening Source = "opening" // 期初余额
 	SourceAI      Source = "ai"      // AI 提议后人工确认
+	// SourceDepreciation 是固定资产折旧计提。
+	SourceDepreciation Source = "depreciation"
+	// SourceAmortization 是长期待摊费用摊销。
+	SourceAmortization Source = "amortization"
 )
 
 // Label 返回中文名。
@@ -134,6 +138,10 @@ func (s Source) Label() string {
 		return "期初余额"
 	case SourceAI:
 		return "AI 建议"
+	case SourceDepreciation:
+		return "折旧"
+	case SourceAmortization:
+		return "摊销"
 	default:
 		return string(s)
 	}

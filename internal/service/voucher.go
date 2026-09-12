@@ -204,6 +204,10 @@ func (s *Service) Voucher(ctx context.Context, id int64) (*VoucherDetail, error)
 	if err != nil {
 		return nil, err
 	}
+	deptNames, err := s.departmentNames(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	d := &VoucherDetail{
 		ID: v.ID, No: v.No, Word: string(v.Word), Date: v.BizDate.String(),
@@ -237,7 +241,7 @@ func (s *Service) Voucher(ctx context.Context, id int64) (*VoucherDetail, error)
 		d.Lines = append(d.Lines, VoucherLine{
 			LineNo: i + 1, AccountCode: e.AccountCode, AccountName: name,
 			Summary: e.Summary, Debit: e.Debit, Credit: e.Credit,
-			AuxDesc: describeAux(e.Aux, names),
+			AuxDesc: describeAux(e.Aux, names, deptNames),
 		})
 	}
 
@@ -757,7 +761,11 @@ func (s *Service) contactNames(ctx context.Context) (map[int64]string, error) {
 //
 // 用**名称**而不是 `往来#3` 这样的 id：凭证详情是给人看的，
 // 「张三」「管理部门」比数字有用得多。
-func describeAux(a ledger.Aux, names map[int64]string) string {
+//
+// ★ 部门名原来是没查的，凭证上一直显示「部门#1」——
+// 用户拿着一沓凭证根本对不出那是哪个部门。部门档案表（0008）补上之后
+// 就能查名字了，这里跟上。员工同理，等档案齐了再补。
+func describeAux(a ledger.Aux, names map[int64]string, deptNames map[int64]string) string {
 	var parts []string
 	if a.ContactID != nil {
 		if n, ok := names[*a.ContactID]; ok {
@@ -770,7 +778,11 @@ func describeAux(a ledger.Aux, names map[int64]string) string {
 		parts = append(parts, fmt.Sprintf("员工#%d", *a.EmployeeID))
 	}
 	if a.DeptID != nil {
-		parts = append(parts, fmt.Sprintf("部门#%d", *a.DeptID))
+		if n, ok := deptNames[*a.DeptID]; ok && n != "" {
+			parts = append(parts, n)
+		} else {
+			parts = append(parts, fmt.Sprintf("部门#%d", *a.DeptID))
+		}
 	}
 	if a.ProjectID != nil {
 		parts = append(parts, fmt.Sprintf("项目#%d", *a.ProjectID))
