@@ -973,7 +973,7 @@ func TestAgentLoopWithRealStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, err := prop.Validate(lctx)
+	report, err := prop.Validate(lctx, ai.Expect{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -229,7 +229,7 @@ func TestParseRejectsDecimalAmount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("解析阶段不该报错（金额合法性由护栏判断）: %v", err)
 	}
-	r, err := p.Validate(testCtx(t))
+	r, err := p.Validate(testCtx(t), Expect{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestParseRejectsDecimalAmount(t *testing.T) {
 // ★ AI 最常见的失效 —— 幻觉一个不存在的科目编码
 func TestGuardrailRejectsHallucinatedAccount(t *testing.T) {
 	p := mustParse(t, strings.Replace(goodJSON, `"1002"`, `"6666"`, 1))
-	r, err := p.Validate(testCtx(t))
+	r, err := p.Validate(testCtx(t), Expect{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestGuardrailRejectsHallucinatedAccount(t *testing.T) {
 
 func TestGuardrailRejectsGroupAccount(t *testing.T) {
 	p := mustParse(t, strings.Replace(goodJSON, `"1002"`, `"1111"`, 1))
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("汇总科目不能记账")
 	}
@@ -281,7 +281,7 @@ func TestGuardrailRejectsGroupAccount(t *testing.T) {
 // ★ 绝不自动调平：差额必须暴露，不能用尾差科目抹平
 func TestGuardrailRejectsUnbalanced(t *testing.T) {
 	p := mustParse(t, strings.Replace(goodJSON, `"credit": 5000000`, `"credit": 4999999`, 1))
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("借贷不平必须被拦下")
 	}
@@ -301,7 +301,7 @@ func TestGuardrailRejectsBothSides(t *testing.T) {
 	bad := strings.Replace(goodJSON, `"debit": 5000000, "credit": 0`,
 		`"debit": 5000000, "credit": 5000000`, 1)
 	p := mustParse(t, bad)
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("借贷同时有金额必须被拦下")
 	}
@@ -310,7 +310,7 @@ func TestGuardrailRejectsBothSides(t *testing.T) {
 func TestGuardrailRejectsZeroAmount(t *testing.T) {
 	bad := strings.Replace(goodJSON, `"debit": 5000000`, `"debit": 0`, 1)
 	p := mustParse(t, bad)
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("金额为零必须被拦下")
 	}
@@ -320,7 +320,7 @@ func TestGuardrailRejectsEmptySummary(t *testing.T) {
 	bad := strings.Replace(goodJSON, `"summary": "收到借款", "account_code": "1002"`,
 		`"summary": "", "account_code": "1002"`, 1)
 	p := mustParse(t, bad)
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("空摘要必须被拦下")
 	}
@@ -331,7 +331,7 @@ func TestGuardrailRejectsSingleEntry(t *testing.T) {
 	  "entries":[{"summary":"s","account_code":"1002","debit":100,"credit":0}]},
 	  "confidence":0.9,"reasoning":"r","evidence":[],"warnings":[]}`
 	p := mustParse(t, bad)
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("单条分录必须被拦下")
 	}
@@ -345,7 +345,7 @@ func TestGuardrailRejectsNoEntries(t *testing.T) {
     ]`,
 		`"entries": []`, 1)
 	p := mustParse(t, bad)
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("空提议必须被拦下")
 	}
@@ -357,7 +357,7 @@ func TestGuardrailRejectsNoEntries(t *testing.T) {
 
 func TestGuardrailRejectsClosedPeriod(t *testing.T) {
 	p := mustParse(t, strings.Replace(goodJSON, "2025-03-11", "2025-02-11", 1))
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("已结账期间必须被拦下")
 	}
@@ -369,7 +369,7 @@ func TestGuardrailRejectsClosedPeriod(t *testing.T) {
 
 func TestGuardrailRejectsFuturePeriod(t *testing.T) {
 	p := mustParse(t, strings.Replace(goodJSON, "2025-03-11", "2025-08-11", 1))
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("未启用期间必须被拦下")
 	}
@@ -382,7 +382,7 @@ func TestGuardrailRejectsFuturePeriod(t *testing.T) {
 func TestGuardrailRejectsBadDate(t *testing.T) {
 	for _, s := range []string{"2025/03/11", "20250311", "三月十一日", ""} {
 		p := mustParse(t, strings.Replace(goodJSON, "2025-03-11", s, 1))
-		r, _ := p.Validate(testCtx(t))
+		r, _ := p.Validate(testCtx(t), Expect{})
 		if r.Passed() {
 			t.Errorf("非法日期 %q 必须被拦下", s)
 		}
@@ -397,7 +397,7 @@ func TestGuardrailRequiresAux(t *testing.T) {
 	// 1122 要求客户，模型没给
 	bad := strings.Replace(goodJSON, `"account_code": "1002"`, `"account_code": "1122"`, 1)
 	p := mustParse(t, bad)
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("缺少必需的辅助核算必须被拦下")
 	}
@@ -411,7 +411,7 @@ func TestGuardrailAcceptsAuxWhenGiven(t *testing.T) {
 	bad := strings.Replace(goodJSON, `"account_code": "1002"`,
 		`"account_code": "1122", "contact_id": 1`, 1)
 	p := mustParse(t, bad)
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if !r.Passed() {
 		t.Fatalf("给了正确的辅助核算应通过，实际 %s", r.Summary())
 	}
@@ -422,7 +422,7 @@ func TestGuardrailRejectsWrongContactKind(t *testing.T) {
 	bad := strings.Replace(goodJSON, `"account_code": "1002"`,
 		`"account_code": "1122", "contact_id": 2`, 1) // 2 是供应商
 	p := mustParse(t, bad)
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("往来单位类型不匹配必须被拦下")
 	}
@@ -436,7 +436,7 @@ func TestGuardrailRejectsUnknownContact(t *testing.T) {
 	bad := strings.Replace(goodJSON, `"account_code": "1002"`,
 		`"account_code": "1122", "contact_id": 999`, 1)
 	p := mustParse(t, bad)
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if r.Passed() {
 		t.Fatal("不存在的往来单位必须被拦下")
 	}
@@ -451,7 +451,7 @@ func TestGuardrailWarnsExtraAux(t *testing.T) {
 	bad := strings.Replace(goodJSON, `"account_code": "1002", "debit": 5000000, "credit": 0`,
 		`"account_code": "1002", "debit": 5000000, "credit": 0, "dept_id": 7`, 1)
 	p := mustParse(t, bad)
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if !r.Passed() {
 		t.Fatalf("多填维度只是提醒，不应阻断：%s", r.Summary())
 	}
@@ -468,14 +468,14 @@ func TestGuardrailConfidence(t *testing.T) {
 	// 越界 → 阻断
 	for _, v := range []string{"-0.1", "1.5"} {
 		p := mustParse(t, strings.Replace(goodJSON, `"confidence": 0.92`, `"confidence": `+v, 1))
-		r, _ := p.Validate(testCtx(t))
+		r, _ := p.Validate(testCtx(t), Expect{})
 		if r.Passed() {
 			t.Errorf("置信度 %s 越界必须被拦下", v)
 		}
 	}
 	// 偏低 → 提醒但不阻断
 	p := mustParse(t, strings.Replace(goodJSON, `"confidence": 0.92`, `"confidence": 0.4`, 1))
-	r, _ := p.Validate(testCtx(t))
+	r, _ := p.Validate(testCtx(t), Expect{})
 	if !r.Passed() {
 		t.Fatalf("低置信度不应阻断，实际 %s", r.Summary())
 	}
@@ -491,7 +491,7 @@ func TestGuardrailConfidence(t *testing.T) {
 
 func TestValidatePassesGoodProposal(t *testing.T) {
 	p := mustParse(t, goodJSON)
-	r, err := p.Validate(testCtx(t))
+	r, err := p.Validate(testCtx(t), Expect{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -509,9 +509,83 @@ func TestValidatePassesGoodProposal(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// ★ 金额必须与用户填的那个数一致
+// ---------------------------------------------------------------------------
+//
+// 这一条是**实测**出来的：用户填 325 元记「请客户吃饭」，模型写成了 326 元。
+// 借贷照样平衡、科目存在、辅助核算也齐，二十多条护栏一条都没拦住 ——
+// 界面上显示的甚至是绿色的「借贷平衡」。
+//
+// 上面那些检查全是「提议自己跟自己自洽」；一份金额写错的凭证完全可以自洽。
+// 所以要拿用户当初填的数对一次，那是这一笔业务里唯一确定的事实。
+
+func TestValidateAmountMustMatchInput(t *testing.T) {
+	// goodJSON 的两条分录各 50000.00 元
+	p := mustParse(t, goodJSON)
+
+	// 用户填的就是 50000 元 → 过
+	r, err := p.Validate(testCtx(t), Expect{Amount: money.Money(5000000)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Passed() {
+		t.Fatalf("金额一致时不该拦，实际 %s", r.Summary())
+	}
+	if c := checkByKey(t, r, "amount_match"); c.Level != CheckOK {
+		t.Errorf("金额一致时应留下一条 OK 记录，便于事后核对，实际 %v", c.Level)
+	}
+
+	// 用户填 325 元、模型写 326 元 → **必须拦**
+	r2, err := p.Validate(testCtx(t), Expect{Amount: money.Money(32500)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r2.Passed() {
+		t.Fatal("金额对不上却放行了 —— 会计一眼扫过去不会停，这种错会直接进账")
+	}
+	c := checkByKey(t, r2, "amount_match")
+	if c.Level != CheckFail {
+		t.Errorf("金额不符应当是阻断项（CheckFail），实际 %v", c.Level)
+	}
+	// 提示里要同时给出两个数，否则用户不知道该信哪个
+	if !strings.Contains(c.Detail, "325.00") || !strings.Contains(c.Detail, "50,000.00") {
+		t.Errorf("提示要把「你填的」和「模型写的」都摆出来，实际 %q", c.Detail)
+	}
+}
+
+// 方向不影响核对：填 -325（支出）而凭证合计 325，是同一笔钱。
+func TestValidateAmountComparesAbsoluteValue(t *testing.T) {
+	p := mustParse(t, goodJSON)
+	r, err := p.Validate(testCtx(t), Expect{Amount: money.Money(-5000000)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Passed() {
+		t.Errorf("收支方向不该被当成金额不符，实际 %s", r.Summary())
+	}
+}
+
+// 没填金额时不做核对 —— 自由文本记账本来就可能没有明确金额。
+func TestValidateSkipsAmountCheckWhenInputIsZero(t *testing.T) {
+	p := mustParse(t, goodJSON)
+	r, err := p.Validate(testCtx(t), Expect{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Passed() {
+		t.Fatalf("没填金额却因为金额被拦了，实际 %s", r.Summary())
+	}
+	for _, c := range r.Checks {
+		if c.Key == "amount_match" {
+			t.Error("没填金额时不该留下金额核对记录 —— 会让人以为核对过了")
+		}
+	}
+}
+
 func TestValidateRequiresContext(t *testing.T) {
 	p := mustParse(t, goodJSON)
-	if _, err := p.Validate(nil); err == nil {
+	if _, err := p.Validate(nil, Expect{}); err == nil {
 		t.Fatal("缺少上下文应报错")
 	}
 }
@@ -592,7 +666,7 @@ func TestMaterializePassesPostingValidation(t *testing.T) {
 	ctx := testCtx(t)
 	p := mustParse(t, strings.Replace(goodJSON, `"account_code": "1002"`,
 		`"account_code": "1122", "contact_id": 1`, 1))
-	r, _ := p.Validate(ctx)
+	r, _ := p.Validate(ctx, Expect{})
 	if !r.Passed() {
 		t.Fatalf("护栏应先通过：%s", r.Summary())
 	}

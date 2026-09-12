@@ -420,11 +420,34 @@ func (r *Report) Detail() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// Expect 是调用方**已经确定知道**的事实，护栏拿它来核对模型的输出。
+//
+// # 为什么要有它
+//
+// 护栏能检查「提议自己跟自己是否自洽」（借贷相等、科目存在……），
+// 但检查不了「提议跟这笔业务是否相符」—— 后者需要业务侧的输入，
+// 而那是调用方才知道的。少了这一半，一份**内部自洽但金额写错**的
+// 凭证会一路绿灯通过。
+//
+// 零值表示「没有可核对的事实」，此时不做对应检查。
+//
+// # 为什么不塞进 ledger.Context
+//
+// Context 描述的是**账套本身**（科目表、期间表、往来档案）——
+// 同一个账套里这些是固定的；而这里的金额是**这一笔业务**的输入，
+// 每笔都不同。混在一起，账套级的校验也会被迫带上业务级的字段。
+type Expect struct {
+	// Amount 是用户填的金额（分，正负表示收付方向）；0 表示没填，
+	// 此时不做金额核对。
+	Amount money.Money
+}
+
 // Validate 对提议执行全部护栏检查。
 //
 // ctx 提供科目树、期间表与往来档案；调用方从存储层加载。
+// expect 是本笔业务里调用方已经确定的事实（见 Expect）。
 // 这是**唯一**的准入闸门：任何提议在变成凭证之前都必须过这里。
-func (p *Proposal) Validate(ctx *ledger.Context) (*Report, error) {
+func (p *Proposal) Validate(ctx *ledger.Context, expect Expect) (*Report, error) {
 	if ctx == nil || ctx.Accounts == nil || ctx.Periods == nil {
 		return nil, errors.New("ai: Validate 需要科目树与期间表")
 	}
@@ -553,7 +576,31 @@ func (p *Proposal) Validate(ctx *ledger.Context) (*Report, error) {
 			Detail: fmt.Sprintf("借 %s = 贷 %s", totalDebit, totalCredit)})
 	}
 
-	// ---- 5. 置信度 ----
+	// ---- 5. 与「已知事实」对照 ----
+	//
+	// ★ 上面 3.x 与 4 检查的全是提议**自己跟自己**是否自洽：
+	// 借贷相等、金额为正、科目存在、辅助核算齐不齐。
+	// 而一份金额写错的凭证可以完全自洽 —— 实测遇到过：用户填 325 元，
+	// 模型写成 326 元，借贷照样平衡，界面上显示的甚至是「借贷平衡」，
+	// 二十多条护栏一条都没拦住。
+	//
+	// 这不是模型算错，是它**读错了输入**，而这类错误最危险：数字
+	// 看起来很正常，会计一眼扫过去不会停。所以必须拿用户当初填的
+	// 那个数对一次 —— 那是这一笔业务里唯一确定的事实。
+	if expect.Amount != 0 {
+		want, got := expect.Amount.Abs(), totalDebit.Abs()
+		if got != want {
+			add(Check{Key: "amount_match", Title: "金额与输入不符", Level: CheckFail,
+				Detail: fmt.Sprintf("你填的是 %s，提议合计 %s，差 %s —— "+
+					"差额通常意味着模型读错了金额，不要直接采纳",
+					want, got, got.Sub(want).Abs())})
+		} else {
+			add(Check{Key: "amount_match", Title: "金额与输入一致", Level: CheckOK,
+				Detail: want.String()})
+		}
+	}
+
+	// ---- 6. 置信度 ----
 	switch {
 	case p.Confidence < 0 || p.Confidence > 1:
 		add(Check{Key: "confidence", Title: "置信度越界", Level: CheckFail,

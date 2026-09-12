@@ -295,7 +295,7 @@ func (s *Suggester) Suggest(ctx context.Context, in Input, targetType string,
 			Err: fmt.Errorf("%w: %v", ai.ErrMalformedJSON, perr)}
 	}
 
-	report, verr := prop.Validate(lctx)
+	report, verr := prop.Validate(lctx, ai.Expect{Amount: in.Amount})
 	if verr != nil {
 		s.record(ctx, SuggestionRecord{
 			TargetType: targetType, TargetID: targetID,

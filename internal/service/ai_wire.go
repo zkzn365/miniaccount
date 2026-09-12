@@ -323,7 +323,7 @@ func (s *Service) AcceptAISuggestion(ctx context.Context, id int64,
 	if err != nil {
 		return nil, err
 	}
-	report, verr := rec.Proposed.Validate(lctx)
+	report, verr := rec.Proposed.Validate(lctx, ai.Expect{})
 	if verr != nil {
 		return nil, verr
 	}
