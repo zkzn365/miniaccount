@@ -1,9 +1,12 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 // ★ 前端契约测试跟着 go test 一起跑。
@@ -47,5 +50,64 @@ func TestFrontendBindingContract(t *testing.T) {
 			t.Skipf("缺少 %s —— 界面冒烟测试需要先构建（见 build.sh）", p)
 		}
 	}
+
+	// ★ testdist 是**构建产物**，`node --test test/gui.test.mjs`
+	// 不会重建它（只有 npm run test:gui 会）。
+	//
+	// 于是 go test 跑的是**上一次**构建出来的界面：改了 .vue 再跑
+	// go test，测的还是旧代码 —— 改对了显示红、改错了显示绿，
+	// 两种都发生过。这里先比时间戳，过期就重建。
+	rebuildTestBundleIfStale(t)
 	run("--test", "test/gui.test.mjs")
+}
+
+// rebuildTestBundleIfStale 发现 src/ 里有比 testdist 更新的文件就重建测试包。
+//
+// 只在过期时重建：新鲜时走的是「什么都不做」，不会给每次 go test
+// 都加上一次 vite 构建。
+func rebuildTestBundleIfStale(t *testing.T) {
+	t.Helper()
+	const bundle = "frontend/testdist/testentry.js"
+	fi, err := os.Stat(bundle)
+	if err != nil {
+		return // 上面已经跳过了，这里只为防御
+	}
+	newest, newestPath := time.Time{}, ""
+	for _, root := range []string{"frontend/src", "frontend/vite.test.config.js", "frontend/package.json"} {
+		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil // 走不进去就算了，别让清理逻辑挡住测试
+			}
+			info, err := d.Info()
+			if err != nil {
+				return nil
+			}
+			if info.ModTime().After(newest) {
+				newest, newestPath = info.ModTime(), p
+			}
+			return nil
+		})
+	}
+	if !newest.After(fi.ModTime()) {
+		return
+	}
+
+	// 用 node_modules 里那个 vite 直接跑，不经过 npx —— npx 会去联网查最新版。
+	// 路径要**先转成绝对路径**：exec 在 chdir 到 Dir 之后才 exec，
+	// 相对路径会变成 frontend/frontend/... 而报「no such file」。
+	vite, err := filepath.Abs(filepath.Join("frontend", "node_modules", ".bin", "vite"))
+	if err != nil {
+		t.Fatalf("拼 vite 路径失败: %v", err)
+	}
+	if _, err := os.Stat(vite); err != nil {
+		t.Skipf("界面源码 %s 比 testdist 新（%s > %s），但没装前端依赖、无法重建 —— "+
+			"先 cd desktop/frontend && npm install",
+			newestPath, newest.Format(time.RFC3339), fi.ModTime().Format(time.RFC3339))
+	}
+	t.Logf("界面源码 %s 比 testdist 新，先重建测试包", newestPath)
+	cmd := exec.Command(vite, "build", "--config", "vite.test.config.js")
+	cmd.Dir = "frontend"
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("重建测试包失败：%v\n%s", err, out)
+	}
 }
