@@ -1,0 +1,23 @@
+# 一律用 LF 检出。
+#
+# ★ 这不是风格偏好，是**正确性**问题。
+#
+# `internal/store/sqlite/seed_accounts.sql` 是用 `//go:embed` 编进二进制的，
+# 而代码按**整行精确匹配**来剔除脚本自带的 BEGIN TRANSACTION / COMMIT
+#（见 migrate.go 的 stripTxControl）—— 因为它在自己的事务里执行，
+# 嵌套 BEGIN 会被 SQLite 拒绝。
+#
+# Git for Windows 默认 `core.autocrlf=true`，检出时会把 .sql 换成 CRLF。
+# 于是 `TrimSuffix(line, ";")` 匹配不到（行尾是 \r，不是 ;），
+# BEGIN 原样留下来，在已有事务里再 BEGIN —— Windows 上建账直接失败：
+#
+#     写入预置科目表: SQL logic error:
+#     cannot start a transaction within a transaction (1)
+#
+# 而 macOS/Linux 检出的是 LF，同样的代码一路正常 —— 这类问题
+# 只在别人的机器上出现，本地怎么试都试不出来。
+#
+# 统一 eol=lf 之后，无论在哪台机器上检出，编进二进制的字节都一样。
+# 配套的防御：stripTxControl 自己也不再依赖行尾形态，
+# 并且有一条测试直接检查嵌入的脚本里没有 \r。
+* text=auto eol=lf

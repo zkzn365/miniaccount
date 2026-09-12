@@ -332,7 +332,11 @@ func (db *DB) CreateBook(ctx context.Context, in CreateBookInput) (*Book, error)
 		if err := db.Books().Create(ctx, tx, b); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, stripTxControl(seedAccountsSQL)); err != nil {
+		seedSQL, serr := stripTxControl(seedAccountsSQL)
+		if serr != nil {
+			return fmt.Errorf("预置科目表: %w", serr)
+		}
+		if _, err := tx.Exec(ctx, seedSQL); err != nil {
 			return fmt.Errorf("写入预置科目表: %w", err)
 		}
 		if err := db.Periods().Insert(ctx, tx, cal.All()); err != nil {

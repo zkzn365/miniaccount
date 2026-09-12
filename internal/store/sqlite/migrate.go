@@ -170,8 +170,12 @@ func (db *DB) SeedChartOfAccounts(ctx context.Context) error {
 	if n > 0 {
 		return nil
 	}
+	sql, err := stripTxControl(seedAccountsSQL)
+	if err != nil {
+		return fmt.Errorf("sqlite: 预置科目表: %w", err)
+	}
 	return db.WithTx(ctx, func(tx *Tx) error {
-		if _, err := tx.Exec(ctx, stripTxControl(seedAccountsSQL)); err != nil {
+		if _, err := tx.Exec(ctx, sql); err != nil {
 			return fmt.Errorf("sqlite: 写入预置科目表: %w", err)
 		}
 		return nil
@@ -185,15 +189,92 @@ func (db *DB) SeedChartOfAccounts(ctx context.Context) error {
 // （"cannot start a transaction within a transaction"）。
 //
 // 只按**整行精确匹配**剔除，因此脚本正文里出现这些词不会受影响。
-func stripTxControl(script string) string {
+//
+// # ★ 这个函数在 Windows 上曾经整个失效
+//
+// 原来是 `TrimSpace(TrimSuffix(line, ";"))` —— **先去分号，再去空白**。
+// 而 CRLF 检出时行尾是 `\r`，TrimSuffix 找不到分号、什么也没去掉，
+// 于是「BEGIN TRANSACTION;\r」原样留下、被当成语句执行。
+//
+// 结果：Windows 上建账直接失败，报的是一句没人看得懂的
+// 「cannot start a transaction within a transaction」；
+// 而 macOS/Linux 检出的是 LF，同样这行代码一路正常。
+//
+// 现在顺序反过来了：**先去空白（含 \r），再去分号，再去一次空白**。
+// 输出统一用 LF，免得把 \r 混进 SQL 语句里。
+func stripTxControl(script string) (string, error) {
 	var b strings.Builder
 	for _, line := range strings.Split(script, "\n") {
-		switch strings.ToUpper(strings.TrimSpace(strings.TrimSuffix(line, ";"))) {
-		case "BEGIN TRANSACTION", "BEGIN", "COMMIT", "END TRANSACTION", "END":
+		if isTxControl(normalizeStmt(line)) {
 			continue
 		}
-		b.WriteString(line)
+		b.WriteString(strings.TrimSuffix(line, "\r"))
 		b.WriteByte('\n')
 	}
-	return b.String()
+	out := b.String()
+
+	// ★ 兜底：剔除之后不该还剩事务控制语句。
+	//
+	// 真剩下了，说明脚本的行形态超出了上面的处理范围 ——
+	// 这时 SQLite 会报「cannot start a transaction within a transaction」，
+	// 用户完全看不懂，也不知道该改什么。提前拦下来，把话说明白。
+	if bad, ok := findTxControl(out); ok {
+		return "", fmt.Errorf(
+			"预置 SQL 里还有事务控制语句 %q，剔除失败 —— "+
+				"它会在已有事务里再开一个事务，SQLite 会拒绝执行。\n"+
+				"多半是文件的换行符不是 LF（Windows 检出时 git 默认会换成 CRLF）。"+
+				"见仓库根目录的 .gitattributes", bad)
+	}
+	return out, nil
+}
+
+// normalizeStmt 把一行归一成可比较的语句文本。
+//
+// 先去空白、再去分号、再去一次空白 —— 顺序不能反：
+// CRLF 的行尾是 `\r`，先啃分号会扑空。
+// 最后把内部连续空白压成一个空格：SQLite 里 `BEGIN  TRANSACTION`
+// （两个空格）与 `BEGIN TRANSACTION` 是同一条语句，而归一化之后
+// 它们也应当相等。
+func normalizeStmt(line string) string {
+	n := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(line), ";"))
+	return strings.Join(strings.Fields(n), " ")
+}
+
+// isTxControl 判断一行是不是事务控制语句。
+func isTxControl(norm string) bool {
+	switch strings.ToUpper(norm) {
+	case "BEGIN TRANSACTION", "BEGIN", "COMMIT", "END TRANSACTION", "END":
+		return true
+	}
+	return false
+}
+
+// looksLikeTxControl 比 isTxControl **更宽**：只要一行以这些关键字开头就算。
+//
+// 为什么要宽一层：剔除只认能识别的形态，识别不了的（比如
+// `BEGIN /*注释*/ TRANSACTION;`）会原样送进 SQLite，换来一句
+// 「cannot start a transaction within a transaction」——
+// 用户看不懂，也不知道该改什么。宽一层的检查会把这种残留揪出来，
+// 由调用方报一句人话。
+//
+// 只列**在已有事务里会直接失败**的那几个：SAVEPOINT / RELEASE
+// 是允许嵌套的，不该被误报。
+func looksLikeTxControl(norm string) bool {
+	up := strings.ToUpper(norm)
+	for _, kw := range []string{"BEGIN", "COMMIT", "END", "ROLLBACK"} {
+		if up == kw || strings.HasPrefix(up, kw+" ") {
+			return true
+		}
+	}
+	return false
+}
+
+// findTxControl 找出第一行残留的事务控制语句。
+func findTxControl(script string) (string, bool) {
+	for _, line := range strings.Split(script, "\n") {
+		if n := normalizeStmt(line); looksLikeTxControl(n) {
+			return n, true
+		}
+	}
+	return "", false
 }
