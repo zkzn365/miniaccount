@@ -64,7 +64,7 @@ async function scrollToEnd() {
   if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
 }
 
-async function send(text) {
+async function send(text, selected) {
   const t = (text ?? input.value).trim()
   if (!t) { notify('先说说这笔业务', 'warn'); return }
   if (!operator.value.trim()) {
@@ -77,6 +77,9 @@ async function send(text) {
   const r = await api.accountantSend({
     sessionId: session.value?.id ?? '',
     text: t,
+    // 点选项时把「点的是哪一项」一起传上去：会计据此知道这是从它给的
+    // 选项里挑的，而不是用户自己打的字 —— 两者该不该再确认一次不同
+    selected: selected ?? [],
   })
   busy.value = false
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
@@ -84,9 +87,16 @@ async function send(text) {
   await scrollToEnd()
 }
 
-/** 点选项：把选项文字当成用户回答发出去（去掉「（推荐）」后缀）。 */
+/**
+ * 点选项：把选项文字当成用户回答发出去。
+ *
+ * ★ 去掉「（推荐）」后缀，但**用原始 label 作为 selected** ——
+ * 后缀是给用户看的提示，不是选项内容的一部分；
+ * 而 selected 要能与模型给出的选项对上。
+ */
 async function pick(opt) {
-  await send(String(opt.label).replace(/（推荐）$/, ''))
+  const label = String(opt.label).replace(/（推荐）$/, '')
+  await send(label, [opt.label])
 }
 
 async function reset() {

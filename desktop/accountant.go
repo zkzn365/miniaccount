@@ -15,6 +15,9 @@ type AccountantSendRequest struct {
 	SessionID string `json:"sessionId"`
 	// Text 是用户说的话（第一句通常是业务描述）。
 	Text string `json:"text"`
+	// Selected 是用户点选的选项 label。点选项时界面把它一起传上来，
+	// 会计据此知道这是「从选项里挑的」而不是「自己打的」。
+	Selected []string `json:"selected"`
 }
 
 // AccountantSend 把用户的一句话交给会计，返回整段对话。
@@ -29,7 +32,7 @@ func (a *App) AccountantSend(req AccountantSendRequest) (out *service.Accountant
 		return nil, f
 	}
 	return wrap(svc.AccountantSend(a.context(), service.AccountantSendInput{
-		SessionID: req.SessionID, Text: req.Text,
+		SessionID: req.SessionID, Text: req.Text, Selected: req.Selected,
 	}))
 }
 

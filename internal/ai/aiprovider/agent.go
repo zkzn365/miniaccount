@@ -248,14 +248,14 @@ func (a *Agent) RunConversation(ctx context.Context, history []Message) (*AgentR
 				if a.Tools != nil {
 					rec.Err += "；可用工具：" + strings.Join(a.Tools.Names(), "、")
 				}
-				history = append(history, toolResultMessage(tc.ID, rec.Err))
+				history = append(history, toolResultMessage(tc.ID, toolErrorText(rec.Err)))
 				res.ToolCalls = append(res.ToolCalls, rec)
 				continue
 			}
 			out, terr := tool.Run(ctx, rawOrEmpty(tc.Arguments))
 			if terr != nil {
 				rec.Err = terr.Error()
-				history = append(history, toolResultMessage(tc.ID, "工具执行失败："+terr.Error()))
+				history = append(history, toolResultMessage(tc.ID, toolErrorText(terr.Error())))
 			} else {
 				rec.Result = out
 				history = append(history, toolResultMessage(tc.ID, out))
@@ -298,6 +298,26 @@ func rawOrEmpty(s string) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return json.RawMessage(s)
+}
+
+// toolErrorText 把工具失败渲染成回灌给模型的那段文字。
+//
+// ★ 统一加 `Error: ` 前缀，是照 deepseek-harness 的做法
+// （它那边是 `Error: <message>` + `isError: true`）。
+//
+// 为什么非要有这个前缀：工具结果是**和正常结果走同一条通道**回灌的，
+// 模型看到的是两段长得差不多的文本。不加前缀时，一段「没有匹配的科目」
+// 与一段「数据库打不开」在它眼里没有区别 —— 而前者该换个词重试，
+// 后者该停下来把问题写进 warnings。前缀是模型唯一能区分二者的线索。
+//
+// isError 那个字段这里没有：本工程走 OpenAI 兼容的 chat completions，
+// 协议里 tool 消息只有 role / tool_call_id / content，
+// 没有地方放一个布尔位。加了也是死的，不如不加。
+func toolErrorText(msg string) string {
+	if strings.HasPrefix(msg, "Error: ") {
+		return msg
+	}
+	return "Error: " + msg
 }
 
 func toolResultMessage(id, content string) Message {

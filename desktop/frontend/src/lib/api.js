@@ -798,8 +798,10 @@ export const mockApp = {
       { role: 'user', text: '昨天买了台打印机', at: '' },
       { role: 'accountant', text: '这台打印机的付款方式和发票情况是什么？', at: '',
         question: {
+          id: 'payment',
           header: '付款与发票',
           question: '这台打印机的付款方式和发票情况是什么？',
+          multiSelect: false,
           options: [
             { label: '银行转账，取得增值税专用发票（推荐）', description: '可抵扣进项税，挂应付账款或直接冲银行', recommended: true },
             { label: '现金支付，只有收据', description: '无进项税可抵，全额计入管理费用', recommended: false },

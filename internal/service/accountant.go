@@ -54,9 +54,16 @@ type AccountantOption struct {
 
 // AccountantQuestion 是会计的追问。
 type AccountantQuestion struct {
-	Header   string             `json:"header"`
-	Question string             `json:"question"`
-	Options  []AccountantOption `json:"options"`
+	// ID 是问题的稳定标识，回答时原样带回（见 AccountantSendInput.AnswerID）。
+	ID string `json:"id"`
+	// Header 是短标题，如「付款方式」。
+	Header string `json:"header"`
+	// Question 是问题本身。
+	Question string `json:"question"`
+	// Options 可空：空表示让用户自由输入。
+	Options []AccountantOption `json:"options"`
+	// MultiSelect 为真表示可以选多个。
+	MultiSelect bool `json:"multiSelect"`
 }
 
 // AccountantTurn 是对话里的一条消息。
@@ -137,6 +144,12 @@ type AccountantSendInput struct {
 	SessionID string
 	// Text 是用户说的话（第一句通常是业务描述）。
 	Text string
+	// Selected 是用户**点选**的选项 label（点选项时有值，自己打字时为空）。
+	//
+	// ★ 分开记是有用的：「点的」是会计写在选项里、标明了后果的那一条；
+	// 「打的」是用户临时想到的，会计可能需要再确认一次。
+	// 合成一句文本回灌，这个区别就丢了。
+	Selected []string
 }
 
 // AccountantSend 把用户的一句话交给会计，返回会计的应答。
@@ -182,11 +195,16 @@ func (s *Service) AccountantSend(ctx context.Context, in AccountantSendInput) (*
 		}
 	}
 
-	// 2. 用户这一句进历史。若上一轮是追问，把「这是在回答什么」带上 ——
+	// 2. 用户这一句进历史。若上一轮是追问，就渲染成**结构化回答**：
+	//    「在回答哪个问题」「点的是哪一项」「自己补了什么」三件事分开说。
 	//    只回「银行」两个字，模型下一轮可能当成一句新的业务描述。
 	userText := text
 	if st.pending != nil {
-		userText = aiprovider.QuestionMessage(st.pending, text)
+		userText = aiprovider.AnswerMessage(st.pending, aiprovider.AccountantAnswer{
+			QuestionID: st.pending.ID,
+			Selected:   nonEmptyStrings(in.Selected),
+			Custom:     text,
+		})
 		st.pending = nil
 	} else {
 		userText = "业务描述：" + text
@@ -229,9 +247,11 @@ func (s *Service) AccountantSend(ctx context.Context, in AccountantSendInput) (*
 			Role: "accountant",
 			Text: reply.Question.Question,
 			Question: &AccountantQuestion{
-				Header:   reply.Question.Header,
-				Question: reply.Question.Question,
-				Options:  toServiceOptions(reply.Question.Options),
+				ID:          reply.Question.ID,
+				Header:      reply.Question.Header,
+				Question:    reply.Question.Question,
+				Options:     toServiceOptions(reply.Question.Options),
+				MultiSelect: reply.Question.MultiSelect,
 			},
 			Model: reply.Model, TokensIn: reply.TokensIn, TokensOut: reply.TokensOut,
 			At: time.Now().Format(time.RFC3339),
@@ -375,6 +395,17 @@ func checkTitles(cs []ai.Check) []string {
 			continue
 		}
 		out = append(out, c.Title)
+	}
+	return out
+}
+
+// nonEmptyStrings 去掉空白项；全空时返回 nil（而不是一个空切片）。
+func nonEmptyStrings(in []string) []string {
+	var out []string
+	for _, s := range in {
+		if strings.TrimSpace(s) != "" {
+			out = append(out, strings.TrimSpace(s))
+		}
 	}
 	return out
 }

@@ -249,6 +249,7 @@ export namespace main {
 	export class AccountantSendRequest {
 	    sessionId: string;
 	    text: string;
+	    selected: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new AccountantSendRequest(source);
@@ -258,6 +259,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sessionId = source["sessionId"];
 	        this.text = source["text"];
+	        this.selected = source["selected"];
 	    }
 	}
 	export class AccrueRequest {
@@ -2137,9 +2139,11 @@ export namespace service {
 	    }
 	}
 	export class AccountantQuestion {
+	    id: string;
 	    header: string;
 	    question: string;
 	    options: AccountantOption[];
+	    multiSelect: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AccountantQuestion(source);
@@ -2147,9 +2151,11 @@ export namespace service {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
 	        this.header = source["header"];
 	        this.question = source["question"];
 	        this.options = this.convertValues(source["options"], AccountantOption);
+	        this.multiSelect = source["multiSelect"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -284,9 +284,78 @@ func TestQuestionMessageCarriesContext(t *testing.T) {
 	if !strings.Contains(got, "银行转账") {
 		t.Errorf("回答本身丢了：%q", got)
 	}
-	// 没有问题上下文时也不该 panic
-	if got := QuestionMessage(nil, "现金"); got != "现金" {
-		t.Errorf("没有问题时应当原样返回，实际 %q", got)
+	// 没有问题上下文时也要把「这是一句回答」标出来 ——
+	// 原样回一个「现金」，模型下一轮会把它当成一句新的业务描述
+	if got := QuestionMessage(nil, "现金"); !strings.Contains(got, "现金") {
+		t.Errorf("回答本身丢了：%q", got)
+	}
+}
+
+// ★ 结构化回答：「点的选项」与「自己打的字」必须分开。
+//
+// 点来的是模型自己写在选项里、有明确后果的那一条；
+// 打来的是用户临时想到的，含义不同，模型该不该再确认一次也不同。
+func TestAnswerMessageSeparatesSelectedFromCustom(t *testing.T) {
+	q := &AccountantQuestion{
+		ID: "payment", Question: "这台打印机怎么付款的？",
+	}
+
+	// 点选项
+	got := AnswerMessage(q, AccountantAnswer{
+		QuestionID: "payment",
+		Selected:   []string{"银行转账，取得专用发票（推荐）"},
+	})
+	if !strings.Contains(got, "#payment") {
+		t.Errorf("★ 回答要带上问题的 id，否则多问题时就配不上了：%q", got)
+	}
+	if !strings.Contains(got, "选中的选项：") {
+		t.Errorf("点选项要说清是点来的：%q", got)
+	}
+	if strings.Contains(got, "用户补充") {
+		t.Errorf("没打字就不该出现「用户补充」：%q", got)
+	}
+
+	// 打字
+	typed := AnswerMessage(q, AccountantAnswer{QuestionID: "payment", Custom: "3000 元"})
+	if !strings.Contains(typed, "用户回答：3000 元") {
+		t.Errorf("打字要说清是打来的：%q", typed)
+	}
+	if strings.Contains(typed, "选中的选项") {
+		t.Errorf("没点选项就不该出现「选中的选项」：%q", typed)
+	}
+
+	// 又点又打
+	both := AnswerMessage(q, AccountantAnswer{
+		Selected: []string{"银行转账"}, Custom: "3000 元，开了专票",
+	})
+	if !strings.Contains(both, "选中的选项：银行转账") ||
+		!strings.Contains(both, "用户补充：3000 元，开了专票") {
+		t.Errorf("两者都要在：%q", both)
+	}
+
+	// 什么都没说也不能回一段空文本
+	if got := AnswerMessage(q, AccountantAnswer{}); got == "" {
+		t.Error("空回答也要有兜底文本，否则回灌给模型的是空消息")
+	}
+}
+
+// id 由模型给；缺失时补一个默认值而不是报错 ——
+// 问题本身是好的、能回答的，缺的只是一个配对用的标识
+func TestParseQuestionFillsMissingID(t *testing.T) {
+	q, err := ParseQuestion(`{"question":"多少钱？"}`)
+	if err != nil {
+		t.Fatalf("缺 id 不该报错: %v", err)
+	}
+	if q.ID == "" {
+		t.Error("缺 id 时应当补一个默认值")
+	}
+	// multi_select 要能解出来
+	q2, err := ParseQuestion(`{"id":"dept","question":"哪些部门？","multi_select":true}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !q2.MultiSelect {
+		t.Error("multi_select 没解析出来")
 	}
 }
 

@@ -49,6 +49,10 @@ func AskUserTool() Tool {
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
+    "id": {
+      "type": "string",
+      "description": "这个问题的稳定标识，回答里会原样带回来（例如 payment、vat、dept）。同一段对话里不要重复用同一个 id。"
+    },
     "header": {
       "type": "string",
       "description": "问题的短标题，两到六个字，例如「付款方式」「是否含税」。界面把它显示在问题上方。"
@@ -68,22 +72,41 @@ func AskUserTool() Tool {
         },
         "required": ["label"]
       }
+    },
+    "multi_select": {
+      "type": "boolean",
+      "description": "用户是否可以选多个。默认 false。只有确实可能同时成立时才设 true（例如「这笔费用涉及哪几个部门」），能单选就别开。"
     }
   },
-  "required": ["question"]
+  "required": ["id", "question"]
 }`),
 		Terminal: true,
 	}
 }
 
 // AccountantQuestion 是会计向用户提的一个问题。
+//
+// 字段与 deepseek-harness 的 ask_user_question 对齐：
+// id / header / question / options / multi_select。
 type AccountantQuestion struct {
+	// ID 是这个问题的稳定标识，回答里原样带回。
+	//
+	// ★ 它不是为了好看：模型一次可能问好几个问题（虽然本工程的提示词
+	// 要求一次只问一个），而回答是**按 id 配对的**。
+	// 靠问题正文去配对，用户把问题复述错一个字就配不上了。
+	ID string `json:"id"`
 	// Header 是短标题，如「付款方式」。
 	Header string `json:"header"`
 	// Question 是问题本身。
 	Question string `json:"question"`
 	// Options 是可选项；为空表示让用户自由输入。
 	Options []AccountantOption `json:"options"`
+	// MultiSelect 为真表示可以选多个。
+	//
+	// ★ 标签是 snake_case，与**模型协议**一致（工具参数、凭证 JSON 都是
+	// 这个风格）；发给前端的 service.AccountantQuestion 才用 camelCase。
+	// 两边各按各的约定，不混。
+	MultiSelect bool `json:"multi_select"`
 }
 
 // AccountantOption 是一个选项。
@@ -202,6 +225,13 @@ func ParseQuestion(raw string) (*AccountantQuestion, error) {
 	if strings.TrimSpace(q.Question) == "" {
 		return nil, fmt.Errorf("问题为空")
 	}
+	// id 缺失时补一个，而不是报错。
+	//
+	// 报错会让用户看到「AI 失败了」，而其实问题本身是好的、能回答的 ——
+	// 缺的只是一个配对用的标识。补一个默认值，回答照样配得上。
+	if strings.TrimSpace(q.ID) == "" {
+		q.ID = "answer"
+	}
 	// 约定的推荐项：第一个选项 + label 末尾带「（推荐）」。
 	// 两者都认 —— 模型偶尔只做对一半，界面不该因此就不高亮。
 	for i := range q.Options {
@@ -226,15 +256,58 @@ func withoutAsk(ts *ToolSet) *ToolSet {
 	return NewToolSet(keep...)
 }
 
-// QuestionMessage 把一次用户回答渲染成回灌给模型的文本。
+// AccountantAnswer 是一次用户回答。
 //
-// ★ 要带上「这是在回答你上一个问题」。
-// 只回一个「银行」两个字，模型下一轮可能把它当成一句新的业务描述。
-func QuestionMessage(q *AccountantQuestion, answer string) string {
+// 形状照 deepseek-harness 的 `{id, selected[], custom?}`：
+// 「点了哪个选项」与「自己打了什么字」是两件事，必须分开。
+type AccountantAnswer struct {
+	// QuestionID 是被回答的那个问题的 id。
+	QuestionID string
+	// Selected 是用户点选的选项 label（可能多个，见 multi_select）。
+	Selected []string
+	// Custom 是用户自己打的字。
+	Custom string
+}
+
+// AnswerMessage 把一次回答渲染成回灌给模型的文本。
+//
+// ★ 必须带上「这是在回答你上一个问题」，而且要点明是**点的选项**
+// 还是**自己打的字**。
+//
+// 只回「银行」两个字，模型下一轮可能把它当成一句新的业务描述；
+// 而「银行转账，取得专用发票」是点来的还是打来的，含义也不同 ——
+// 点来的是它在选项里写明的、有明确后果的那一条，
+// 打来的是用户临时想到的，可能需要再确认一次。
+func AnswerMessage(q *AccountantQuestion, ans AccountantAnswer) string {
 	var b strings.Builder
-	if q != nil && q.Question != "" {
-		fmt.Fprintf(&b, "（回答你刚才的问题：%s）\n", q.Question)
+	if q != nil && strings.TrimSpace(q.Question) != "" {
+		id := strings.TrimSpace(q.ID)
+		if id == "" {
+			id = "answer"
+		}
+		fmt.Fprintf(&b, "（回答你刚才的问题 #%s：%s）\n", id, q.Question)
 	}
-	b.WriteString(strings.TrimSpace(answer))
-	return b.String()
+	if len(ans.Selected) > 0 {
+		fmt.Fprintf(&b, "选中的选项：%s\n", strings.Join(ans.Selected, "、"))
+	}
+	if c := strings.TrimSpace(ans.Custom); c != "" {
+		if len(ans.Selected) > 0 {
+			fmt.Fprintf(&b, "用户补充：%s\n", c)
+		} else {
+			fmt.Fprintf(&b, "用户回答：%s\n", c)
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if out == "" {
+		return "（用户没有回答）"
+	}
+	return out
+}
+
+// QuestionMessage 是 AnswerMessage 的自由输入版（用户直接打字）。
+//
+// 保留它是因为调用方常常只有一段文字；两者渲染出来的东西必须一致，
+// 所以这里只是包一层。
+func QuestionMessage(q *AccountantQuestion, answer string) string {
+	return AnswerMessage(q, AccountantAnswer{Custom: answer})
 }
