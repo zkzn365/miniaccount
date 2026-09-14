@@ -36,6 +36,10 @@ func TestFrontendBindingContract(t *testing.T) {
 		t.Logf("%s", out)
 	}
 	run("--test", "test/api.test.mjs")
+	// 主题的可读性检查：从 style.css 读 oklch、算 WCAG 对比度。
+	// 不需要浏览器，也不需要后端，纯算术 —— 但它是「改一个颜色值」
+	// 唯一能被自动拦住的地方。
+	run("--test", "test/theme.test.mjs")
 
 	// 界面冒烟测试要有真实产物才能跑：两个发布二进制 + 测试用的前端包。
 	// 缺了就跳过（干净检出上不该因为「没构建过」而失败），

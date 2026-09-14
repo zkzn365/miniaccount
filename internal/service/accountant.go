@@ -12,6 +12,7 @@ import (
 
 	"miniaccount/internal/ai/aiprovider"
 	"miniaccount/internal/domain/ai"
+	"miniaccount/internal/store/sqlite"
 )
 
 // ---------------------------------------------------------------------------
@@ -206,6 +207,41 @@ type AccountantSendInput struct {
 	Selected []string
 }
 
+// accountantTools 是会计 agent 能用的**全部**工具。
+//
+// # 两类工具，边界很清楚
+//
+//	只读（直连）      搜索、报表、体检、工资试算、明细账
+//	终止型（要确认）  问用户、提议新建档案、提议人事异动
+//
+// ★ 抽成独立函数，是为了让这条边界能写成测试。
+//
+// 「不许有写账套的工具」这句话写在注释里没有用 —— 半年后有人
+// 顺手加一个 close_period 就没人拦得住了。见 accountant_tools_test.go。
+func accountantTools(repo *sqlite.AIRepo) *aiprovider.ToolSet {
+	return aiprovider.NewToolSet(
+		aiprovider.AskUserTool(),
+		aiprovider.SearchAccountsTool(repo),
+		aiprovider.SearchContactsTool(repo),
+		// ★ 部门与员工这两个是补上来的。原来只有科目 / 往来单位 / 历史，
+		// 于是遇到「560204 要求部门辅助核算」时，模型既查不到有哪些部门，
+		// 也没法带着真实选项问用户，只能空着交差 ——
+		// 用户看到的就是「缺少必需的辅助核算」。
+		aiprovider.SearchDepartmentsTool(repo),
+		aiprovider.SearchEmployeesTool(repo),
+		aiprovider.FindSimilarVouchersTool(repo),
+		// 账务查询：报表、本月体检、五险一金试算、明细账。
+		// 全是只读 —— 读错了最多是它说错一句话，用户看得见、下一句就能纠正
+		aiprovider.GetReportTool(repo),
+		aiprovider.CheckPeriodTool(repo),
+		aiprovider.PreviewPayrollTool(repo),
+		aiprovider.GetLedgerTool(repo),
+		// 写账套的动作一律「提议 + 用户确认」，模型自己没有写库能力
+		aiprovider.ProposeNewAuxTool(),
+		aiprovider.ProposeHRActionTool(),
+	)
+}
+
 // AccountantSend 把用户的一句话交给会计，返回会计的应答。
 //
 // 会计要么**问一句**（信息不够），要么**给出凭证草稿**。
@@ -268,27 +304,7 @@ func (s *Service) AccountantSend(ctx context.Context, in AccountantSendInput) (*
 	// 3. 跑一轮会计
 	acct := &aiprovider.Accountant{
 		Provider: prov,
-		Tools: aiprovider.NewToolSet(
-			aiprovider.AskUserTool(),
-			aiprovider.SearchAccountsTool(s.db.AI()),
-			aiprovider.SearchContactsTool(s.db.AI()),
-			// ★ 这两个是补上来的。原来只有科目 / 往来单位 / 历史，
-			// 于是遇到「560204 要求部门辅助核算」时，模型既查不到
-			// 有哪些部门，也没法带着真实选项问用户，只能空着交差 ——
-			// 用户看到的就是「缺少必需的辅助核算」。
-			aiprovider.SearchDepartmentsTool(s.db.AI()),
-			aiprovider.SearchEmployeesTool(s.db.AI()),
-			aiprovider.FindSimilarVouchersTool(s.db.AI()),
-			// 账务查询：报表、本月体检、五险一金试算、明细账。
-			// 全是只读 —— 读错了最多是它说错一句话，用户看得见、下一句就能纠正
-			aiprovider.GetReportTool(s.db.AI()),
-			aiprovider.CheckPeriodTool(s.db.AI()),
-			aiprovider.PreviewPayrollTool(s.db.AI()),
-			aiprovider.GetLedgerTool(s.db.AI()),
-			// 写账套的动作一律「提议 + 用户确认」，模型自己没有写库能力
-			aiprovider.ProposeNewAuxTool(),
-			aiprovider.ProposeHRActionTool(),
-		),
+		Tools:    accountantTools(s.db.AI()),
 		Options: aiprovider.AgentOptions{
 			MaxRounds: 4, MaxTokens: 2048, Temperature: 0,
 		},

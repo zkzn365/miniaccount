@@ -17,7 +17,13 @@ const badgeVariants = cva(
         credit: 'border-transparent bg-[var(--credit)]/12 text-[var(--credit)]',
         profit: 'border-transparent bg-[var(--profit)]/12 text-[var(--profit)]',
         loss: 'border-transparent bg-[var(--loss)]/12 text-[var(--loss)]',
-        warn: 'border-transparent bg-[var(--warn)]/18 text-[var(--warn)]',
+        // ★ 警告徽标用**实心郁金裙 + 深字**，而不是「淡色底 + 淡色字」。
+        //
+        // 实心金底上写深字是 12:1，一眼就看得见；而「淡金底 + 深金字」
+        // 在浅色主题下是 4.9:1，小字号徽标上很容易糊成一片。
+        // 郁金裙本来就不适合当文字色（白底上 1.44:1），
+        // 但当底色它比任何强调色都醒目 —— 徽标正是它的用武之地。
+        warn: 'border-transparent bg-[var(--gold)] text-[var(--gold-foreground)]',
         muted: 'border-transparent bg-muted text-muted-foreground',
       },
     },

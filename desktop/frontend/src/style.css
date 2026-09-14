@@ -12,64 +12,108 @@
  */
 @custom-variant dark (&:is(.dark *));
 
+/* ---------------------------------------------------------------------------
+ * 主题色：中国传统色「紫罗兰」+「郁金裙」
+ * ---------------------------------------------------------------------------
+ *
+ *   紫罗兰  #5f469a   RGB 95 70 154    → oklch(0.463 0.132 294.4)
+ *   郁金裙  #ffd301   RGB 255 211 1    → oklch(0.879 0.180 93.6)
+ *
+ * ★ 这两个颜色的**对比度差得很远**，所以用法必须分开，不能对调：
+ *
+ *   白字 / 紫罗兰底 = 7.42:1   ✓ 主按钮、选中态
+ *   紫罗兰字 / 白底  = 7.42:1   ✓ 强调文字
+ *   深字 / 郁金裙底  = 12.08:1  ✓ 金色**只做底**，上面配深字
+ *   郁金裙字 / 白底  = 1.44:1   ✗ 完全读不了
+ *
+ * 所以郁金裙不是「次要的强调色」，而是「只能当底色/色块的金色」。
+ * --warn 是它的**可读版本**（压暗到能在白底上当正文），
+ * 两者不是一个东西：--gold 用于填充，--warn 用于文字。
+ * 把 --warn 直接改成 #ffd301 会让全程序的警告文字变成一片看不见的淡黄。
+ *
+ * 中性色也带了一点紫罗兰的色相（chroma 0.008~0.02，hue 295）——
+ * 不是纯灰。整屏纯灰配一个紫按钮，看起来像「按钮没改完」。
+ * --------------------------------------------------------------------------- */
+
 :root {
   --radius: 0.625rem;
-  --background: oklch(0.995 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.995 0.002 295);
+  --foreground: oklch(0.16 0.02 295);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.16 0.02 295);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.45 0.13 250);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.16 0.02 295);
+  /* 紫罗兰 */
+  --primary: oklch(0.463 0.132 294.4);
+  --primary-foreground: oklch(0.99 0.005 295);
+  --secondary: oklch(0.968 0.010 295);
+  --secondary-foreground: oklch(0.24 0.03 295);
+  --muted: oklch(0.968 0.010 295);
+  --muted-foreground: oklch(0.545 0.025 295);
+  /* 悬停底色用淡紫，文字带紫 —— 选中态一眼看出是「品牌色」而不是灰块 */
+  --accent: oklch(0.955 0.020 295);
+  --accent-foreground: oklch(0.34 0.10 294);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.45 0.13 250);
+  --border: oklch(0.925 0.012 295);
+  --input: oklch(0.925 0.012 295);
+  --ring: oklch(0.463 0.132 294.4);
 
-  /* 会计专用语义色：借/贷、盈/亏、已结账/未启用 */
+  /* 郁金裙：**只做底色**，上面配 --gold-foreground */
+  --gold: oklch(0.879 0.180 93.6);
+  --gold-foreground: oklch(0.24 0.045 88);
+
+  /* 会计专用语义色：借/贷、盈/亏、已结账/未启用。
+     这几个是**语义**不是装饰 —— 借与贷、盈与亏各占一个色相，
+     改成本色会让报表失去一眼可读性。所以它们不跟着主题走。 */
   --debit: oklch(0.50 0.15 250);
   --credit: oklch(0.55 0.16 30);
   --profit: oklch(0.55 0.16 150);
   --loss: oklch(0.58 0.20 25);
   --closed: oklch(0.62 0.02 250);
-  --warn: oklch(0.70 0.16 75);
+  /* --warn 是郁金裙的**可读版本**（压暗过），用于白底上的警告文字 */
+  --warn: oklch(0.55 0.115 78);
 }
 
 .dark {
-  --background: oklch(0.16 0.005 250);
-  --foreground: oklch(0.96 0 0);
-  --card: oklch(0.205 0.005 250);
-  --card-foreground: oklch(0.96 0 0);
-  --popover: oklch(0.205 0.005 250);
-  --popover-foreground: oklch(0.96 0 0);
-  --primary: oklch(0.70 0.12 250);
-  --primary-foreground: oklch(0.16 0.005 250);
-  --secondary: oklch(0.27 0.005 250);
-  --secondary-foreground: oklch(0.96 0 0);
-  --muted: oklch(0.27 0.005 250);
-  --muted-foreground: oklch(0.70 0 0);
-  --accent: oklch(0.30 0.01 250);
-  --accent-foreground: oklch(0.96 0 0);
-  --destructive: oklch(0.65 0.20 25);
-  --destructive-foreground: oklch(0.98 0 0);
+  --background: oklch(0.165 0.015 295);
+  --foreground: oklch(0.965 0.006 295);
+  --card: oklch(0.215 0.018 295);
+  --card-foreground: oklch(0.965 0.006 295);
+  --popover: oklch(0.215 0.018 295);
+  --popover-foreground: oklch(0.965 0.006 295);
+  /* 深底上的紫罗兰要提亮，否则 0.463 的亮度压在 0.165 的背景上，
+     按钮会陷进背景里 —— 这是深色模式最常见的一种「看着没坏、就是看不清」。 */
+  --primary: oklch(0.735 0.125 294);
+  --primary-foreground: oklch(0.185 0.03 295);
+  --secondary: oklch(0.275 0.020 295);
+  --secondary-foreground: oklch(0.965 0.006 295);
+  --muted: oklch(0.275 0.020 295);
+  --muted-foreground: oklch(0.715 0.020 295);
+  --accent: oklch(0.315 0.035 295);
+  --accent-foreground: oklch(0.92 0.045 294);
+  /* ★ 深色下的破坏性按钮原来只有 3.35:1（白字压在亮红上）。
+     这是主题测试抓出来的、**之前就存在**的问题，顺手修掉：
+     深色底上的红要够亮才看得清，而亮底上就得配深字 ——
+     与 --gold 同一个道理，不是「白字走天下」。
+     修完 深字/红底 6.19:1，红字/深底 6.13:1，两边都够。 */
+  --destructive: oklch(0.68 0.19 25);
+  --destructive-foreground: oklch(0.16 0.03 25);
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.70 0.12 250);
+  --ring: oklch(0.735 0.125 294);
+
+  /* 深色底上郁金裙可以本色出场，深字照样清楚 */
+  --gold: oklch(0.879 0.180 93.6);
+  --gold-foreground: oklch(0.22 0.04 90);
 
   --debit: oklch(0.72 0.12 250);
   --credit: oklch(0.75 0.13 35);
   --profit: oklch(0.75 0.14 150);
   --loss: oklch(0.72 0.17 25);
   --closed: oklch(0.65 0.02 250);
-  --warn: oklch(0.80 0.14 80);
+  /* 深底上郁金裙本色即可读，--warn 可以贴近它 */
+  --warn: oklch(0.845 0.155 92);
 }
 
 @theme inline {
@@ -98,6 +142,8 @@
   --color-loss: var(--loss);
   --color-closed: var(--closed);
   --color-warn: var(--warn);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

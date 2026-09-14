@@ -78,6 +78,11 @@ const currentPeriod = computed(() => {
         collapsed ? 'w-[4.25rem]' : 'w-56',
       ]"
     >
+      <!-- ★ 顶部一条紫罗兰 → 郁金裙的品牌条。
+           整屏只有这里用渐变，多了就俗；它的作用是让人一眼知道
+           「这是小账本」，而不是「某个用了紫按钮的后台」。 -->
+      <div class="h-1 shrink-0 bg-gradient-to-r from-[var(--primary)] via-[var(--primary)] to-[var(--gold)]" />
+
       <div class="flex h-14 items-center gap-2 px-4">
         <!-- ★ 用应用图标本身当界面 logo，而不是另写一个「账」字方块 ——
              用户在外面看到的（Dock / 任务栏 / 访达）就是它，
@@ -97,13 +102,19 @@ const currentPeriod = computed(() => {
             v-if="canNavigate"
             :to="r.path"
             :class="[
-              'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
+              'relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
               route.path === r.path
                 ? 'bg-accent font-medium text-accent-foreground'
                 : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
             ]"
             :title="collapsed ? r.meta.title : ''"
           >
+            <!-- 选中项左边那条金色标记：郁金裙在浅紫底上最显眼，
+                 而且它是「位置标识」，不承担文字对比度的责任 -->
+            <span
+              v-if="route.path === r.path"
+              class="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-[var(--gold)]"
+            />
             <component :is="icons[r.meta.icon]" class="size-4 shrink-0" />
             <span v-if="!collapsed" class="truncate">{{ r.meta.title }}</span>
           </RouterLink>
