@@ -2176,6 +2176,48 @@ export namespace service {
 		    return a;
 		}
 	}
+	export class CPAAnswerView {
+	    conclusion: string;
+	    basis: string[];
+	    obtained: string[];
+	    missing: string[];
+	    process: string;
+	    findings: string[];
+	    risk: string;
+	    recommendations: string[];
+	    humanReview: string[];
+	    submittable: boolean;
+	    submittableClaimed: boolean;
+	    policyNote: string;
+	    text: string;
+	    problemList: string[];
+	    escalation: string[];
+	    riskUnstated: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new CPAAnswerView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.conclusion = source["conclusion"];
+	        this.basis = source["basis"];
+	        this.obtained = source["obtained"];
+	        this.missing = source["missing"];
+	        this.process = source["process"];
+	        this.findings = source["findings"];
+	        this.risk = source["risk"];
+	        this.recommendations = source["recommendations"];
+	        this.humanReview = source["humanReview"];
+	        this.submittable = source["submittable"];
+	        this.submittableClaimed = source["submittableClaimed"];
+	        this.policyNote = source["policyNote"];
+	        this.text = source["text"];
+	        this.problemList = source["problemList"];
+	        this.escalation = source["escalation"];
+	        this.riskUnstated = source["riskUnstated"];
+	    }
+	}
 	export class HRProposalView {
 	    kind: string;
 	    kindLabel: string;
@@ -2238,6 +2280,7 @@ export namespace service {
 	    question?: AccountantQuestion;
 	    aux?: AuxProposalView;
 	    hr?: HRProposalView;
+	    answer?: CPAAnswerView;
 	    voucher?: VoucherDraft;
 	    failures?: string[];
 	    warnings?: string[];
@@ -2259,6 +2302,7 @@ export namespace service {
 	        this.question = this.convertValues(source["question"], AccountantQuestion);
 	        this.aux = this.convertValues(source["aux"], AuxProposalView);
 	        this.hr = this.convertValues(source["hr"], HRProposalView);
+	        this.answer = this.convertValues(source["answer"], CPAAnswerView);
 	        this.voucher = this.convertValues(source["voucher"], VoucherDraft);
 	        this.failures = source["failures"];
 	        this.warnings = source["warnings"];
@@ -3175,6 +3219,7 @@ export namespace service {
 		    return a;
 		}
 	}
+	
 	export class CategoryOption {
 	    value: string;
 	    label: string;

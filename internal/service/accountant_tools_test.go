@@ -3,6 +3,8 @@ package service
 import (
 	"strings"
 	"testing"
+
+	"miniaccount/internal/ai/aiprovider"
 )
 
 // ---------------------------------------------------------------------------
@@ -164,5 +166,106 @@ func TestAccountantToolDescriptions(t *testing.T) {
 	}
 	if ts.Len() < 12 {
 		t.Errorf("工具数 = %d，比预期少 —— 是不是有人删了不带测试的工具？", ts.Len())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CPA 答复的两条**程序判定**
+// ---------------------------------------------------------------------------
+
+// ★ submittable 一律压回 false —— 模型说了不算。
+//
+// 这是整份 CPA 规格里最容易被绕过的一条：模型只要在 JSON 里写
+// `"submittable": true`，界面上就会出现一份「可以直接对外提交」的材料。
+// 而它没有这个资格：注册会计师业务依法由会计师事务所统一受理。
+func TestAnswerViewForcesSubmittableFalse(t *testing.T) {
+	a := &aiprovider.Answer{
+		Conclusion: "可以申报", Submittable: true,
+		Text: "这份材料可以直接用于正式申报。",
+	}
+	v := answerView(a)
+	if v.Submittable {
+		t.Fatal("★ 模型声称可直接申报，程序却没有压回 false —— 硬边界失效了")
+	}
+	if !v.SubmittableClaimed {
+		t.Error("模型声称过什么要留痕（审计时需要知道它当时怎么说的）")
+	}
+	if len(v.ProblemList) == 0 {
+		t.Error("★ 声称可以直接对外提交，必须作为问题报出来给用户看")
+	}
+	found := false
+	for _, p := range v.ProblemList {
+		if strings.Contains(p, "申报") || strings.Contains(p, "对外") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("问题列表里要说清是「不能对外提交」这件事：%v", v.ProblemList)
+	}
+}
+
+// ★ 强制转人工是**兜底**：模型自己没说，程序也要能识别出来
+func TestAnswerViewEscalatesHighRisk(t *testing.T) {
+	cases := []struct {
+		name string
+		a    aiprovider.Answer
+		want string
+	}{
+		{"审计意见类型", aiprovider.Answer{
+			Conclusion: "拟出具保留意见", Risk: "高"}, "保留意见"},
+		{"舞弊", aiprovider.Answer{
+			Conclusion: "可能存在管理层舞弊", Risk: "高"}, "舞弊"},
+		{"持续经营", aiprovider.Answer{
+			Conclusion: "持续经营存在重大不确定性", Risk: "高"}, "持续经营"},
+		{"税务处罚", aiprovider.Answer{
+			Process: "涉及税务处罚", Risk: "中"}, "税务处罚"},
+		{"上市公司", aiprovider.Answer{
+			Findings: []string{"客户为上市公司"}, Risk: "中"}, "上市公司"},
+		{"跨境", aiprovider.Answer{
+			Recommendations: []string{"涉及境外付款"}, Risk: "中"}, "跨境"},
+		{"需要签字盖章", aiprovider.Answer{
+			Conclusion: "准备盖章", Risk: "中"}, "签字"},
+		{"自评高风险", aiprovider.Answer{
+			Conclusion: "没什么问题", Risk: "高"}, "高风险"},
+		{"模型自己列了人工事项", aiprovider.Answer{
+			Conclusion: "x", Risk: "低",
+			HumanReview: []string{"请人工确认"}}, "人工"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			v := answerView(&c.a)
+			if len(v.Escalation) == 0 {
+				t.Fatalf("★ 没有转人工：%+v", c.a)
+			}
+			joined := strings.Join(v.Escalation, "｜")
+			if !strings.Contains(joined, c.want) {
+				t.Errorf("命中项里应当提到 %q，实际：%s", c.want, joined)
+			}
+		})
+	}
+}
+
+// 反过来：一份普通的低风险答复不该把用户推去找会计师 ——
+// 每次都报「需要人工复核」，用户很快就不看了
+func TestAnswerViewDoesNotEscalateOrdinaryAnswer(t *testing.T) {
+	a := &aiprovider.Answer{
+		Conclusion: "本月试算平衡，可以结账",
+		Risk:       "低",
+		Text:       "资产 1000.00，负债 400.00，所有者权益 600.00。",
+	}
+	v := answerView(a)
+	if len(v.Escalation) != 0 {
+		t.Errorf("普通答复不该转人工，实际命中：%v", v.Escalation)
+	}
+}
+
+// 风险等级没标注：按中等处理，并且要标出来
+func TestAnswerViewMarksUnstatedRisk(t *testing.T) {
+	v := answerView(&aiprovider.Answer{Conclusion: "x", Risk: "随便"})
+	if !v.RiskUnstated {
+		t.Error("模型乱填风险等级时要标出「未标注」")
+	}
+	if v.Risk != aiprovider.RiskMedium {
+		t.Errorf("未标注时按中等处理，实际 %q —— 不能当低风险", v.Risk)
 	}
 }

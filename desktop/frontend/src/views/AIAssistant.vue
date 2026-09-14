@@ -358,6 +358,74 @@ const EXAMPLES = [
                 </div>
               </div>
 
+              <!-- 专业答复（CPA 十项结构）-->
+              <div v-if="t.answer" class="ml-6 flex flex-col gap-2 rounded-lg border p-3 text-sm">
+                <!-- ★ 强制转人工：放在**最上面**。
+                     这是整段回答里用户最需要先看到的一句 ——
+                     埋在末尾等于没写。 -->
+                <div v-if="t.answer.escalation?.length"
+                     class="rounded-md border border-[var(--gold)] bg-[var(--gold)]/15 p-2.5">
+                  <p class="font-medium text-[var(--gold-foreground)]">
+                    需要人工注册会计师复核
+                  </p>
+                  <ul class="mt-1 list-disc pl-5 text-xs">
+                    <li v-for="(e, k) in t.answer.escalation" :key="k">{{ e }}</li>
+                  </ul>
+                </div>
+
+                <div v-if="t.answer.problemList?.length"
+                     class="rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs">
+                  <p class="font-medium text-destructive">这份答复本身有问题</p>
+                  <ul class="mt-1 list-disc pl-5">
+                    <li v-for="(p, k) in t.answer.problemList" :key="k">{{ p }}</li>
+                  </ul>
+                </div>
+
+                <div v-if="t.answer.text" class="whitespace-pre-wrap">{{ t.answer.text }}</div>
+
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                  <Badge :variant="t.answer.risk === '高' ? 'warn'
+                    : (t.answer.risk === '中' ? 'outline' : 'muted')">
+                    风险 {{ t.answer.risk }}{{ t.answer.riskUnstated ? '（未标注）' : '' }}
+                  </Badge>
+                  <Badge variant="muted">不可直接对外提交</Badge>
+                  <span v-if="t.answer.policyNote" class="text-muted-foreground">
+                    {{ t.answer.policyNote }}
+                  </span>
+                </div>
+
+                <details v-if="t.answer.basis?.length" class="text-xs">
+                  <summary class="cursor-pointer text-muted-foreground">适用依据</summary>
+                  <ul class="mt-1 list-disc pl-5"><li v-for="(b, k) in t.answer.basis" :key="k">{{ b }}</li></ul>
+                </details>
+                <details v-if="t.answer.process" class="text-xs">
+                  <summary class="cursor-pointer text-muted-foreground">计算与检查过程</summary>
+                  <pre class="mt-1 whitespace-pre-wrap">{{ t.answer.process }}</pre>
+                </details>
+                <details v-if="t.answer.missing?.length" class="text-xs">
+                  <summary class="cursor-pointer text-muted-foreground">
+                    缺失的资料（{{ t.answer.missing.length }}）
+                  </summary>
+                  <ul class="mt-1 list-disc pl-5"><li v-for="(m, k) in t.answer.missing" :key="k">{{ m }}</li></ul>
+                </details>
+                <details v-if="t.answer.findings?.length" class="text-xs">
+                  <summary class="cursor-pointer text-muted-foreground">
+                    发现的问题（{{ t.answer.findings.length }}）
+                  </summary>
+                  <ul class="mt-1 list-disc pl-5"><li v-for="(f, k) in t.answer.findings" :key="k">{{ f }}</li></ul>
+                </details>
+                <details v-if="t.answer.recommendations?.length" class="text-xs">
+                  <summary class="cursor-pointer text-muted-foreground">处理建议</summary>
+                  <ul class="mt-1 list-disc pl-5"><li v-for="(r, k) in t.answer.recommendations" :key="k">{{ r }}</li></ul>
+                </details>
+                <details v-if="t.answer.humanReview?.length" class="text-xs">
+                  <summary class="cursor-pointer text-muted-foreground">
+                    需人工判断（{{ t.answer.humanReview.length }}）
+                  </summary>
+                  <ul class="mt-1 list-disc pl-5"><li v-for="(h, k) in t.answer.humanReview" :key="k">{{ h }}</li></ul>
+                </details>
+              </div>
+
               <!-- 人事异动提议 -->
               <div v-if="t.hr" class="ml-6 rounded-lg border border-primary/40 bg-primary/5 p-3">
                 <p class="text-sm font-medium">建议{{ t.hr.kindLabel }}</p>

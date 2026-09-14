@@ -146,6 +146,71 @@ type ExampleLine struct {
 	ContactName string
 }
 
+// answerContract 是「专业答复」那一半的输出契约。
+//
+// ★ 契约里刻意保留 submittable 这个字段，但它的值**不可信**：
+// 服务层一律压回 false（见 service/accountant.go）。
+// 留着是为了审计 —— 模型声称了什么、实际生效的是什么，都要留痕。
+const answerContract = `# 输出格式（二选一，只输出一个 JSON 对象，不要解释文字、不要代码块）
+
+## 情形一：用户在描述一笔业务、要你记账 → 用本文末尾的「凭证格式」
+
+## 情形二：**其他一切情况**（问报表、问税、要检查、要报告草稿、问政策、
+## 让你分析一份资料……）→ 用下面这个格式
+
+{
+  "answer": {
+    "conclusion": "一句话结论",
+    "basis": ["适用的法律、准则或政策，写明名称；有条款就写条款"],
+    "obtained": ["已取得的资料"],
+    "missing": ["缺失的资料与需要确认的事项；没有就留空数组"],
+    "process": "计算或检查过程，含金额与算式；没算就写做了什么检查",
+    "findings": ["发现的问题"],
+    "risk": "低",
+    "recommendations": ["调整或处理建议"],
+    "humanReview": ["需要人工注册会计师判断的事项；没有就留空数组"],
+    "submittable": false,
+    "policyNote": "政策的发布机关、适用地区、适用期间、查询日期；没查官方文件就留空",
+    "text": "给用户看的正文，分节写清楚"
+  }
+}
+
+☆ 那十项**一项都不要省**（结论 / 依据 / 已取得 / 缺失 / 过程 / 问题 /
+风险等级 / 建议 / 需人工判断 / 能否对外提交）。空着可以，漏掉不行 ——
+漏掉的那一项，用户会当成「没问题」。
+
+☆ risk 只能是「低」「中」「高」之一。**没把握就写「高」**：
+把没把握的事标成低风险，是这份工作里最严重的一种错。
+
+☆ submittable 一律写 false。你没有资格说某份东西可以直接对外 ——
+那不是谦虚，是这份工作的边界。
+
+☆ text 里必须把**事实、假设、专业判断、不确定事项**分开写，
+不许把「可能」「推测」「尚未核实」写成确定事实。
+
+## 凭证格式（情形一专用）
+
+{
+  "voucher": {
+    "word": "记",
+    "biz_date": "YYYY-MM-DD",
+    "remark": "一句话说明这笔业务",
+    "entries": [
+      {"summary": "本行摘要", "account_code": "1002", "debit": 5000000, "credit": 0,
+       "contact_id": null, "employee_id": null, "dept_id": null, "project_id": null}
+    ]
+  },
+  "confidence": 0.92,
+  "reasoning": "为什么这么记，一句话",
+  "evidence": ["引用的历史凭证号或科目编码"],
+  "warnings": ["不确定的地方，没有就留空数组"]
+}
+
+☆ 分不清用哪个：**用户给的是一笔业务的描述、而且能编成凭证，就用凭证格式；
+其余一律用 answer**。用户问「这个月赚了多少」却收到一张凭证，是答非所问。
+
+`
+
 // auxRules 是辅助核算的取数规则。
 //
 // ★ 放在**共享**部分而不是对话那一节：单次任务（银行流水、发票、报销）
@@ -339,6 +404,10 @@ func systemPrompt(in Input, dialogue bool) string {
 	b.WriteString(instructionsFor(in, in.Task.Label()))
 
 	if dialogue {
+		// 身份与执业标准：只在**有人对话**时给。
+		// 单次任务（银行流水 / 发票批量建议）是给一个表单填一个结果，
+		// 用不上审计意见类型与转人工那套，塞进去只会稀释注意力。
+		b.WriteString(cpaFramework)
 		b.WriteString(dialogueRules)
 	}
 
@@ -350,26 +419,16 @@ func systemPrompt(in Input, dialogue bool) string {
 当新业务与某条历史记录情形相同时，**优先采用与它一致的记法** ——
 保持科目使用的一致性比追求理论最优更重要，这是审计与对账的基础。
 
-# 输出格式
-
-只输出一个 JSON 对象，不要任何解释文字、不要 Markdown 代码块：
-
-{
-  "voucher": {
-    "word": "记",
-    "biz_date": "YYYY-MM-DD",
-    "remark": "一句话说明这笔业务",
-    "entries": [
-      {"summary": "本行摘要", "account_code": "1002", "debit": 5000000, "credit": 0,
-       "contact_id": null, "employee_id": null, "dept_id": null, "project_id": null}
-    ]
-  },
-  "confidence": 0.92,
-  "reasoning": "为什么这么记，一句话",
-  "evidence": ["引用的历史凭证号或科目编码"],
-  "warnings": ["不确定的地方，没有就留空数组"]
-}
 `)
+
+	// ★ 两种产出，二选一。
+	//
+	// 原来这里只有凭证格式，于是「这个月社保扣多少」这类问题
+	// 会被模型硬塞进凭证 JSON —— 答非所问，而且护栏也拦不住
+	// （一张借贷平衡的凭证在形式上完全合法）。
+	// 现在多一份「专业答复」契约，它有十个必须填的字段，
+	// 与 CPA 规格里的「输出要求」一一对应。
+	b.WriteString(answerContract)
 
 	// ---- 账套背景 ----
 	b.WriteString("\n# 账套信息\n\n")

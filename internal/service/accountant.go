@@ -114,6 +114,48 @@ type HRProposalView struct {
 	Detail string `json:"detail"`
 }
 
+// CPAAnswerView 是一份**专业答复**。
+//
+// 字段与 CPA 规格里的「输出要求」十项一一对应，外加三条由**程序**
+// 判定、不由模型说了算的（见下面每个字段的说明）。
+type CPAAnswerView struct {
+	// ---- 模型给的十项 ----
+	Conclusion      string   `json:"conclusion"`
+	Basis           []string `json:"basis"`
+	Obtained        []string `json:"obtained"`
+	Missing         []string `json:"missing"`
+	Process         string   `json:"process"`
+	Findings        []string `json:"findings"`
+	Risk            string   `json:"risk"`
+	Recommendations []string `json:"recommendations"`
+	HumanReview     []string `json:"humanReview"`
+	// Submittable 是**程序**判定，不是模型说的。
+	//
+	// ★ 永远为 false。AI 产出的东西不能直接用于正式申报或对外提交 ——
+	// 这不是措辞问题，是这份工作的边界。模型声称 true 时，
+	// 原文留在 SubmittableClaimed 里供审计，生效值仍是 false。
+	Submittable bool `json:"submittable"`
+	// SubmittableClaimed 是模型自己声称的值（审计用）。
+	SubmittableClaimed bool `json:"submittableClaimed"`
+	// PolicyNote 是政策的发布机关 / 适用地区 / 适用期间 / 查询日期。
+	PolicyNote string `json:"policyNote"`
+	// Text 是给用户看的正文。
+	Text string `json:"text"`
+
+	// ---- 程序判定的三条 ----
+	// ProblemList 是这份答复本身的问题（结论为空、风险没标、声称可提交…）。
+	//
+	// ★ 标签必须与界面读的字段名一致（界面写的是 answer.problemList）。
+	// 这里原来写成 "problems"，而单元测试断言的是**Go 字段**
+	// v.ProblemList —— 两边都「过」了，只有界面悄悄拿不到数据，
+	// 问题列表一个字都不显示。是端到端跑一遍才露出来的。
+	ProblemList []string `json:"problemList"`
+	// Escalation 是**必须转人工**的命中项；空表示没有命中。
+	Escalation []string `json:"escalation"`
+	// RiskUnstated 为真表示模型没有标注风险等级（已按中等处理）。
+	RiskUnstated bool `json:"riskUnstated"`
+}
+
 // AccountantTurn 是对话里的一条消息。
 type AccountantTurn struct {
 	// Role 是 user（用户说的）或 accountant（会计说的）。
@@ -129,6 +171,8 @@ type AccountantTurn struct {
 	Aux *AuxProposalView `json:"aux,omitempty"`
 	// HR 非空表示这一条是**提议人事异动**（离职 / 转部门 / 调薪）。
 	HR *HRProposalView `json:"hr,omitempty"`
+	// Answer 非空表示这一条是**专业答复**（不是凭证）。
+	Answer *CPAAnswerView `json:"answer,omitempty"`
 	// Voucher 非空表示这一条给出了凭证草稿。
 	Voucher *VoucherDraft `json:"voucher,omitempty"`
 	// Failures / Warnings 是护栏结论，界面要摊开展示。
@@ -382,6 +426,21 @@ func (s *Service) AccountantSend(ctx context.Context, in AccountantSendInput) (*
 		return &st.view, nil
 	}
 
+	// 3d. 专业答复：不编凭证，就是一段带结构的回答
+	if reply.Answer != nil {
+		st.pending = nil
+		v := answerView(reply.Answer)
+		st.view.Turns = append(st.view.Turns, AccountantTurn{
+			Role:   "accountant",
+			Text:   v.Text,
+			Answer: v,
+			Model:  reply.Model, TokensIn: reply.TokensIn, TokensOut: reply.TokensOut,
+			At: time.Now().Format(time.RFC3339),
+		})
+		accountantSessions.touch(st)
+		return &st.view, nil
+	}
+
 	// 4. 给了凭证：走**与单次建议完全相同**的护栏与审计
 	turn := AccountantTurn{
 		Role: "accountant", Text: reply.Say,
@@ -530,6 +589,51 @@ func nonEmptyStrings(in []string) []string {
 		}
 	}
 	return out
+}
+
+// answerView 把专业答复转成界面形状，并执行两条**程序判定**。
+//
+// # 1. submittable 一律压回 false
+//
+// 模型可以声称某份东西「可以直接用于正式申报或对外提交」，而这句话
+// 必须被程序否掉：注册会计师业务依法由会计师事务所统一受理，
+// 依法出具的报告才有效力。AI 草拟的文本没有这个效力。
+//
+// 它声称了什么留在 submittableClaimed 里 —— 不是为了相信它，
+// 是为了出问题时能查出「当时模型是怎么说的」。
+//
+// # 2. 强制转人工
+//
+// 这是**兜底**：主要判定在提示词里（模型自己把事项写进 humanReview）。
+// 兜底之所以要做，是因为漏报的代价不对称：
+//
+//	多报一次 → 用户多找一个会计看一眼
+//	漏报一次 → 他拿着没核过的东西去申报
+//
+// 所以宁可误报。命中项全部列给用户看，由他自己判断要不要找人。
+func answerView(a *aiprovider.Answer) *CPAAnswerView {
+	// ★ 先归一，再取字段。
+	//
+	// 不能假定调用方已经归一过：风险等级那条不变式是安全相关的
+	// （未标注必须按中等处理），靠调用顺序维持迟早会漏。
+	a.Normalize()
+	v := &CPAAnswerView{
+		Conclusion: a.Conclusion, Basis: a.Basis, Obtained: a.Obtained,
+		Missing: a.Missing, Process: a.Process, Findings: a.Findings,
+		Risk: a.Risk, Recommendations: a.Recommendations,
+		HumanReview: a.HumanReview, PolicyNote: a.PolicyNote, Text: a.Text,
+		SubmittableClaimed: a.Submittable,
+		Submittable:        false, // ★ 硬边界：说了不算
+		RiskUnstated:       a.RiskUnstated,
+	}
+	v.ProblemList = a.Validate()
+	if v.SubmittableClaimed {
+		v.ProblemList = append(v.ProblemList,
+			"模型声称这份材料可以直接用于正式申报或对外提交 —— 已按「不可以」处理。"+
+				"AI 草拟的文本不具有证明效力，必须经人工注册会计师复核后才能对外")
+	}
+	v.Escalation = a.EscalationReasons()
+	return v
 }
 
 // hrProposalView 把提议补成人看得懂的一张卡。

@@ -158,6 +158,12 @@ type AccountantReply struct {
 	HR *HRProposal
 	// Proposal 非空表示会计给出了凭证提议（**尚未过护栏**）。
 	Proposal *ai.Proposal
+	// Answer 非空表示会计给的是一份**专业答复**（不是凭证）。
+	//
+	// ★ 两者必有其一（除非是在追问或提议建档）。
+	// 答非所问最常见的形态就是把「这个月赚了多少」编成一张凭证 ——
+	// 那张凭证形式上完全合法，护栏拦不住，所以要在这一层分开。
+	Answer *Answer
 	// Raw 是模型返回的原始内容，进审计表。
 	Raw string
 	// ToolCalls 是本次用到的工具，进审计表。
@@ -254,6 +260,19 @@ func (a *Accountant) Reply(ctx context.Context, history []Message) (*AccountantR
 	if err != nil {
 		return reply, out, err
 	}
+	// ★ 先看这是不是一份专业答复。
+	//
+	// 判别是**显式**的（看有没有 answer 字段），不做「先试凭证、
+	// 失败再当文字」的回退：那种写法会把一张写坏的凭证悄悄降级成
+	// 一段看着挺像回事的分析，而它本该校验失败、本该报错。
+	if ans, ok, aerr := ParseAnswer(res.Content); aerr != nil {
+		return reply, out, aerr
+	} else if ok {
+		reply.Answer = ans
+		reply.Say = ans.Conclusion
+		return reply, out, nil
+	}
+
 	prop, perr := ai.Parse(res.Content)
 	if perr != nil {
 		return reply, out, perr
