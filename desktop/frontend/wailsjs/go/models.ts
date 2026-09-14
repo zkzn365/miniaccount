@@ -2176,6 +2176,40 @@ export namespace service {
 		    return a;
 		}
 	}
+	export class HRProposalView {
+	    kind: string;
+	    kindLabel: string;
+	    employeeId: number;
+	    employeeName: string;
+	    deptId?: number;
+	    deptName: string;
+	    leaveDate: string;
+	    baseSalary: string;
+	    siBase: string;
+	    hfbBase: string;
+	    reason: string;
+	    detail: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new HRProposalView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.kindLabel = source["kindLabel"];
+	        this.employeeId = source["employeeId"];
+	        this.employeeName = source["employeeName"];
+	        this.deptId = source["deptId"];
+	        this.deptName = source["deptName"];
+	        this.leaveDate = source["leaveDate"];
+	        this.baseSalary = source["baseSalary"];
+	        this.siBase = source["siBase"];
+	        this.hfbBase = source["hfbBase"];
+	        this.reason = source["reason"];
+	        this.detail = source["detail"];
+	    }
+	}
 	export class AuxProposalView {
 	    kind: string;
 	    kindLabel: string;
@@ -2203,6 +2237,7 @@ export namespace service {
 	    text: string;
 	    question?: AccountantQuestion;
 	    aux?: AuxProposalView;
+	    hr?: HRProposalView;
 	    voucher?: VoucherDraft;
 	    failures?: string[];
 	    warnings?: string[];
@@ -2223,6 +2258,7 @@ export namespace service {
 	        this.text = source["text"];
 	        this.question = this.convertValues(source["question"], AccountantQuestion);
 	        this.aux = this.convertValues(source["aux"], AuxProposalView);
+	        this.hr = this.convertValues(source["hr"], HRProposalView);
 	        this.voucher = this.convertValues(source["voucher"], VoucherDraft);
 	        this.failures = source["failures"];
 	        this.warnings = source["warnings"];
@@ -3901,6 +3937,7 @@ export namespace service {
 	        this.issues = source["issues"];
 	    }
 	}
+	
 	
 	
 	export class InsuranceSchemeInfo {

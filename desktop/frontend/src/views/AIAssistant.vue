@@ -132,6 +132,44 @@ async function confirmAux(turn) {
   await send(`（已新建${a.kindLabel}「${a.name}」，请继续）`)
 }
 
+/**
+ * 确认一条人事异动。
+ *
+ * ★ 同样是**界面**去调绑定，不是模型动手：这三件事都改历史，
+ * 工资争议里要答得出「是谁什么时候办的」。
+ */
+async function confirmHR(turn) {
+  const h = turn.hr
+  if (!h) return
+  if (!operator.value.trim()) {
+    notify('请先填写操作人 —— 人事异动的操作日志要记这个名字', 'warn')
+    return
+  }
+  deciding.value = true
+  let r
+  if (h.kind === 'resign') {
+    r = await api.resignEmployee({
+      id: h.employeeId, leaveDate: h.leaveDate, reason: h.reason,
+      operator: operator.value.trim(),
+    })
+  } else if (h.kind === 'transfer') {
+    r = await api.transferEmployee({
+      id: h.employeeId, deptId: h.deptId ?? 0, reason: h.reason,
+      operator: operator.value.trim(),
+    })
+  } else {
+    r = await api.adjustSalary({
+      id: h.employeeId, baseSalary: h.baseSalary,
+      siBase: h.siBase, hfbBase: h.hfbBase, reason: h.reason,
+      operator: operator.value.trim(),
+    })
+  }
+  deciding.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify(`已${h.kindLabel}：${h.employeeName || '员工 #' + h.employeeId}`, 'success')
+  await send(`（已${h.kindLabel}，请继续）`)
+}
+
 async function reset() {
   if (turns.value.length && !confirm('清空这段对话？已经生成的凭证草稿不受影响。')) return
   const r = await api.accountantReset(session.value?.id ?? '')
@@ -316,6 +354,26 @@ const EXAMPLES = [
                   </Button>
                   <span class="text-xs text-muted-foreground">
                     建完会回到对话，接着记这笔
+                  </span>
+                </div>
+              </div>
+
+              <!-- 人事异动提议 -->
+              <div v-if="t.hr" class="ml-6 rounded-lg border border-primary/40 bg-primary/5 p-3">
+                <p class="text-sm font-medium">建议{{ t.hr.kindLabel }}</p>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  {{ t.hr.detail }}
+                </p>
+                <div class="mt-2 flex items-center gap-2">
+                  <Button size="sm" :disabled="deciding || busy" @click="confirmHR(t)">
+                    <Check class="size-3.5" /> 确认{{ t.hr.kindLabel }}
+                  </Button>
+                  <Button size="sm" variant="ghost" :disabled="deciding || busy"
+                          @click="send('（先不办，我再想想）')">
+                    先不办
+                  </Button>
+                  <span class="text-xs text-muted-foreground">
+                    操作日志里记的是你的名字
                   </span>
                 </div>
               </div>

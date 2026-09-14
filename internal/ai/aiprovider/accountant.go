@@ -154,6 +154,8 @@ type AccountantReply struct {
 	//
 	// 与 Question 一样是**终止型**：它调用 propose_new_aux 就结束这一轮。
 	Aux *AuxProposal
+	// HR 非空表示会计提议一次人事异动（离职 / 转部门 / 调薪）。
+	HR *HRProposal
 	// Proposal 非空表示会计给出了凭证提议（**尚未过护栏**）。
 	Proposal *ai.Proposal
 	// Raw 是模型返回的原始内容，进审计表。
@@ -222,13 +224,22 @@ func (a *Accountant) Reply(ctx context.Context, history []Message) (*AccountantR
 	reply.TokensIn, reply.TokensOut = res.TokensIn, res.TokensOut
 
 	if res.Asked != nil {
-		if res.Asked.Name == "propose_new_aux" {
+		switch res.Asked.Name {
+		case "propose_new_aux":
 			p, perr := ParseAuxProposal(res.Asked.Args)
 			if perr != nil {
 				return reply, out, fmt.Errorf("ai: 解析档案提议失败（%w）：%s",
 					perr, res.Asked.Args)
 			}
 			reply.Aux = p
+			return reply, out, nil
+		case "propose_hr_action":
+			p, perr := ParseHRProposal(res.Asked.Args)
+			if perr != nil {
+				return reply, out, fmt.Errorf("ai: 解析人事异动提议失败（%w）：%s",
+					perr, res.Asked.Args)
+			}
+			reply.HR = p
 			return reply, out, nil
 		}
 		q, qerr := ParseQuestion(res.Asked.Args)

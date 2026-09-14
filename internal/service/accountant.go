@@ -89,6 +89,30 @@ type AuxProposalView struct {
 	Reason string `json:"reason"`
 }
 
+// HRProposalView 是「建议对某位员工做一次人事异动」。
+type HRProposalView struct {
+	// Kind 是 resign | transfer | salary。
+	Kind string `json:"kind"`
+	// KindLabel 是中文名。
+	KindLabel string `json:"kindLabel"`
+	// EmployeeID / EmployeeName 是目标员工。
+	EmployeeID   int64  `json:"employeeId"`
+	EmployeeName string `json:"employeeName"`
+	// DeptID / DeptName 是调入部门（transfer）。
+	DeptID   *int64 `json:"deptId"`
+	DeptName string `json:"deptName"`
+	// LeaveDate 是离职日期（resign）。
+	LeaveDate string `json:"leaveDate"`
+	// BaseSalary / SIBase / HFBBase 是调整后的金额（salary，单位元）。
+	BaseSalary string `json:"baseSalary"`
+	SIBase     string `json:"siBase"`
+	HFBBase    string `json:"hfbBase"`
+	// Reason 是原因，会写进操作日志。
+	Reason string `json:"reason"`
+	// Detail 是一句给人看的说明（由服务层拼好）。
+	Detail string `json:"detail"`
+}
+
 // AccountantTurn 是对话里的一条消息。
 type AccountantTurn struct {
 	// Role 是 user（用户说的）或 accountant（会计说的）。
@@ -102,6 +126,8 @@ type AccountantTurn struct {
 	// ★ 由界面去调建档的绑定，模型全程没有写库能力 ——
 	// 与「AI 产物一律先是草稿」是同一条边界。
 	Aux *AuxProposalView `json:"aux,omitempty"`
+	// HR 非空表示这一条是**提议人事异动**（离职 / 转部门 / 调薪）。
+	HR *HRProposalView `json:"hr,omitempty"`
 	// Voucher 非空表示这一条给出了凭证草稿。
 	Voucher *VoucherDraft `json:"voucher,omitempty"`
 	// Failures / Warnings 是护栏结论，界面要摊开展示。
@@ -253,8 +279,15 @@ func (s *Service) AccountantSend(ctx context.Context, in AccountantSendInput) (*
 			aiprovider.SearchDepartmentsTool(s.db.AI()),
 			aiprovider.SearchEmployeesTool(s.db.AI()),
 			aiprovider.FindSimilarVouchersTool(s.db.AI()),
-			// 账套里确实没有时，提议新建（由用户确认，模型不能自己建）
+			// 账务查询：报表、本月体检、五险一金试算、明细账。
+			// 全是只读 —— 读错了最多是它说错一句话，用户看得见、下一句就能纠正
+			aiprovider.GetReportTool(s.db.AI()),
+			aiprovider.CheckPeriodTool(s.db.AI()),
+			aiprovider.PreviewPayrollTool(s.db.AI()),
+			aiprovider.GetLedgerTool(s.db.AI()),
+			// 写账套的动作一律「提议 + 用户确认」，模型自己没有写库能力
 			aiprovider.ProposeNewAuxTool(),
+			aiprovider.ProposeHRActionTool(),
 		),
 		Options: aiprovider.AgentOptions{
 			MaxRounds: 4, MaxTokens: 2048, Temperature: 0,
@@ -311,6 +344,21 @@ func (s *Service) AccountantSend(ctx context.Context, in AccountantSendInput) (*
 				DeptID:    reply.Aux.DeptID,
 				Reason:    reply.Aux.Reason,
 			},
+			Model: reply.Model, TokensIn: reply.TokensIn, TokensOut: reply.TokensOut,
+			At: time.Now().Format(time.RFC3339),
+		})
+		accountantSessions.touch(st)
+		return &st.view, nil
+	}
+
+	// 3c. 人事异动提议：同样停下来等用户确认
+	if reply.HR != nil {
+		st.pending = nil
+		v := s.hrProposalView(ctx, reply.HR)
+		st.view.Turns = append(st.view.Turns, AccountantTurn{
+			Role:  "accountant",
+			Text:  v.Detail,
+			HR:    v,
 			Model: reply.Model, TokensIn: reply.TokensIn, TokensOut: reply.TokensOut,
 			At: time.Now().Format(time.RFC3339),
 		})
@@ -466,6 +514,53 @@ func nonEmptyStrings(in []string) []string {
 		}
 	}
 	return out
+}
+
+// hrProposalView 把提议补成人看得懂的一张卡。
+//
+// ★ 模型只给 id，名字由这里查出来填上。
+// 让模型填名字的话，它会写一个「听起来对」的名字 —— 而档案里可能
+// 根本没有这个人，用户在一张写着别人名字的卡片上点「确认」，
+// 改的却是另一个人。
+func (s *Service) hrProposalView(ctx context.Context,
+	p *aiprovider.HRProposal) *HRProposalView {
+
+	v := &HRProposalView{
+		Kind: p.Kind, KindLabel: p.Label(), EmployeeID: p.EmployeeID,
+		DeptID: p.DeptID, LeaveDate: p.LeaveDate,
+		BaseSalary: p.BaseSalary, SIBase: p.SIBase, HFBBase: p.HFBBase,
+		Reason: p.Reason,
+	}
+	// 员工名
+	if list, err := s.db.AI().Employees(ctx); err == nil {
+		for _, e := range list {
+			if e.ID == p.EmployeeID {
+				v.EmployeeName = e.Name
+				break
+			}
+		}
+	}
+	// 部门名
+	if p.DeptID != nil {
+		if names, err := s.departmentNames(ctx); err == nil {
+			v.DeptName = names[*p.DeptID]
+		}
+	}
+	who := v.EmployeeName
+	if who == "" {
+		who = fmt.Sprintf("员工 #%d", p.EmployeeID)
+	}
+	switch p.Kind {
+	case aiprovider.HRResign:
+		v.Detail = fmt.Sprintf("建议为「%s」办理离职，离职日期 %s。%s",
+			who, p.LeaveDate, p.Reason)
+	case aiprovider.HRTransfer:
+		v.Detail = fmt.Sprintf("建议把「%s」调到「%s」。%s", who, v.DeptName, p.Reason)
+	case aiprovider.HRSalary:
+		v.Detail = fmt.Sprintf("建议把「%s」的月工资调整为 %s 元。%s",
+			who, p.BaseSalary, p.Reason)
+	}
+	return v
 }
 
 func toServiceOptions(opts []aiprovider.AccountantOption) []AccountantOption {
