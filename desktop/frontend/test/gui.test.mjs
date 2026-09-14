@@ -1015,6 +1015,53 @@ test('★ 凭证详情的列序与录入一致', async () => {
     `★ 凭证详情的列序与录入不一致，实际：${JSON.stringify(heads)}`)
 })
 
+// ★ AI 记账助手：只有一个「业务描述」输入框。
+//
+// 原来有业务类型、金额、日期、对方户名、资金方向五样，外加一个批量记账卡片。
+// 那五样是**会计要问的问题**，不是用户想说的话 —— 逼用户先想清楚
+// 「这算银行流水还是自然语言」「资金方向是支出还是收入」，
+// 等于让他自己先当一遍会计。
+//
+// 改成对话之后，缺什么由会计问。这条测试守的就是「别又加回来」。
+test('★ AI 记账助手只剩一个业务描述框，其余交给会计问', async () => {
+  await page.goto('/ai')
+  await settle(100)
+
+  const t = page.text()
+  for (const gone of ['业务类型', '资金方向', '对方户名', '批量记账']) {
+    assert.ok(!t.includes(gone),
+      `★ 「${gone}」还在 —— 那是会计要问的问题，不该让用户先填：${t.slice(0, 400)}`)
+  }
+
+  // 输入框：只有**一个** textarea（业务描述），不是五个字段
+  const areas = [...win.document.body.querySelectorAll('textarea')]
+  assert.equal(areas.length, 1,
+    `页面上应当只有一个输入框（业务描述），实际 ${areas.length} 个`)
+  assert.ok(/例：/.test(areas[0].getAttribute('placeholder') || ''),
+    `那个框应当是业务描述：${areas[0].getAttribute('placeholder')}`)
+
+  // 页面上该有的：操作人（采纳时签章）与发送
+  const btns = [...win.document.body.querySelectorAll('button')]
+    .map((b) => b.textContent.replace(/\s+/g, ''))
+  assert.ok(btns.some((x) => x.includes('发送')), `找不到发送按钮：${btns}`)
+  // 「换一笔」只在聊起来之后才出现（还没说话时没什么可换的）
+  assert.ok(!btns.some((x) => x.includes('换一笔')),
+    `还没说话就出现了「换一笔」：${btns}`)
+
+  // 硬边界要写在页面上（会计不能写账这件事，用户得知道）
+  assert.ok(/通不过护栏|不能写账/.test(t), `页面上没写清会计的能力边界：${t.slice(0, 400)}`)
+})
+
+// 没有配置模型时，要给一句**能照着做**的提示，而不是静默失败
+test('★ 没配模型时，会计给出可操作的提示', async () => {
+  const r = await bundle.api.api.accountantSend({ sessionId: '', text: '昨天买了台打印机' })
+  assert.equal(r.ok, false, '没配模型时不该假装成功')
+  const msg = r.fault?.message ?? ''
+  assert.ok(/模型|设置/.test(msg),
+    `提示要指向「去哪儿配」：${msg}`)
+  assert.ok(!/undefined|null|panic/i.test(msg), `不要漏出内部错误：${msg}`)
+})
+
 test('★ 结账真的能结掉（不是只把弹窗打开）', async () => {
   await page.goto('/periods')
   await settle(80)

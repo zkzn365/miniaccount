@@ -38,6 +38,14 @@ type Tool struct {
 	Parameters json.RawMessage
 	// Run 执行工具，返回给模型看的结果（通常是一段文本或 JSON）。
 	Run func(ctx context.Context, args json.RawMessage) (string, error)
+	// Terminal 为真表示这个工具**不是查一下再继续**，而是「停下来问用户」。
+	//
+	// 模型调用它时，循环立即结束，把这次调用原样交给上层去问人 ——
+	// 结果不是给模型看的，是给用户看的。因此它不需要 Run。
+	//
+	// ★ 用一个标记位而不是「返回一个特殊错误」：错误会被回灌给模型
+	// 让它重试，而这里要的是**正常结束**，不是失败。
+	Terminal bool
 }
 
 // ToolSet 是工具集合。
@@ -124,6 +132,8 @@ type AgentResult struct {
 	TokensOut int
 	// Truncated 为真表示轮数用尽仍未得到最终答案。
 	Truncated bool
+	// Asked 非空表示本轮以「向用户提问」结束（模型调用了 Terminal 工具）。
+	Asked *ToolCallRecord
 }
 
 // ToolCallRecord 记录一次工具调用。
@@ -154,8 +164,28 @@ var ErrNoFinalAnswer = errors.New("ai: Agent 在限定轮数内没有给出最�
 // 模型要判断的是「这笔业务该记哪些科目」，需要的额外信息无非
 // 「账套里有没有这个科目」「上次类似的怎么记的」。三轮之内一定能问完。
 func (a *Agent) Run(ctx context.Context, system, user string) (*AgentResult, error) {
+	res, _, err := a.RunConversation(ctx, []Message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: user},
+	})
+	return res, err
+}
+
+// RunConversation 在**给定的对话历史**上跑一轮 Agent 循环。
+//
+// 与 Run 的区别只有一个：Run 是「一问一答」（system + 一句用户输入 →
+// 最终 JSON，历史留在函数里），RunConversation 把历史交回给调用方。
+//
+// ★ 需要它是因为「会计」这个场景是多轮的：他可能先问一句
+// 「这笔是含税价还是不含税价？」再编凭证。要让追问成立，
+// 模型必须看得见之前说过的话 —— 而那句话不在本次调用里，
+// 在上一次调用里。历史因此必须由上层保存。
+//
+// 返回的 history 是**追加了本轮全部消息之后**的完整历史，
+// 调用方应当原样存下来，下次接着传进来。
+func (a *Agent) RunConversation(ctx context.Context, history []Message) (*AgentResult, []Message, error) {
 	if a.Provider == nil {
-		return nil, ErrNoProvider
+		return nil, history, ErrNoProvider
 	}
 	opts := a.Options
 	if opts.MaxRounds <= 0 {
@@ -163,12 +193,9 @@ func (a *Agent) Run(ctx context.Context, system, user string) (*AgentResult, err
 	}
 
 	res := &AgentResult{}
-	// 对话历史。★ 工具结果要按原样回灌给模型 ——
+	// ★ 工具结果要按原样回灌给模型 ——
 	// 模型是靠看到工具返回的内容来决定下一步的。
-	history := []Message{
-		{Role: "system", Content: system},
-		{Role: "user", Content: user},
-	}
+	history = append([]Message(nil), history...)
 
 	for round := 1; round <= opts.MaxRounds; round++ {
 		res.Rounds = round
@@ -180,7 +207,7 @@ func (a *Agent) Run(ctx context.Context, system, user string) (*AgentResult, err
 
 		resp, err := a.Provider.Complete(ctx, req)
 		if err != nil {
-			return res, err
+			return res, history, err
 		}
 		res.TokensIn += resp.TokensIn
 		res.TokensOut += resp.TokensOut
@@ -188,7 +215,8 @@ func (a *Agent) Run(ctx context.Context, system, user string) (*AgentResult, err
 		// 没有工具调用就是最终答案
 		if len(resp.ToolCalls) == 0 {
 			res.Content = resp.Content
-			return res, nil
+			history = append(history, Message{Role: "assistant", Content: resp.Content})
+			return res, history, nil
 		}
 
 		// 把模型的工具调用意图记进对话
@@ -202,6 +230,15 @@ func (a *Agent) Run(ctx context.Context, system, user string) (*AgentResult, err
 				Round: round, Name: tc.Name, Args: tc.Arguments,
 			}
 			tool, ok := a.Tools.Get(tc.Name)
+			// ★ 终止型工具（问用户）：不执行、不续轮，直接结束本次循环。
+			//
+			// 历史里要留下这次调用，下一轮用户答完之后接着往下说 ——
+			// 所以 assistant 的那条消息已经在上面追加过了。
+			if ok && tool.Terminal {
+				res.Asked = &rec
+				res.ToolCalls = append(res.ToolCalls, rec)
+				return res, history, nil
+			}
 			if !ok {
 				// ★ 未知工具不报错，而是把「没有这个工具」告诉模型。
 				//
@@ -228,7 +265,7 @@ func (a *Agent) Run(ctx context.Context, system, user string) (*AgentResult, err
 	}
 
 	res.Truncated = true
-	return res, fmt.Errorf("%w（已用 %d 轮）", ErrNoFinalAnswer, opts.MaxRounds)
+	return res, history, fmt.Errorf("%w（已用 %d 轮）", ErrNoFinalAnswer, opts.MaxRounds)
 }
 
 // ParseAgentResult 把 Agent 的最终输出解析成提议。

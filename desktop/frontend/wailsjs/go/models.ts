@@ -264,6 +264,20 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class AccountantSendRequest {
+	    sessionId: string;
+	    text: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountantSendRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sessionId = source["sessionId"];
+	        this.text = source["text"];
+	    }
+	}
 	export class AccrueRequest {
 	    year: number;
 	    month: number;
@@ -2260,6 +2274,147 @@ export namespace service {
 	        this.reason = source["reason"];
 	    }
 	}
+	export class AccountantOption {
+	    label: string;
+	    description: string;
+	    recommended: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountantOption(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.label = source["label"];
+	        this.description = source["description"];
+	        this.recommended = source["recommended"];
+	    }
+	}
+	export class AccountantQuestion {
+	    header: string;
+	    question: string;
+	    options: AccountantOption[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountantQuestion(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.header = source["header"];
+	        this.question = source["question"];
+	        this.options = this.convertValues(source["options"], AccountantOption);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class AccountantTurn {
+	    role: string;
+	    text: string;
+	    question?: AccountantQuestion;
+	    voucher?: VoucherDraft;
+	    failures?: string[];
+	    warnings?: string[];
+	    suggestionId?: number;
+	    passed?: boolean;
+	    model?: string;
+	    tokensIn?: number;
+	    tokensOut?: number;
+	    at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountantTurn(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.role = source["role"];
+	        this.text = source["text"];
+	        this.question = this.convertValues(source["question"], AccountantQuestion);
+	        this.voucher = this.convertValues(source["voucher"], VoucherDraft);
+	        this.failures = source["failures"];
+	        this.warnings = source["warnings"];
+	        this.suggestionId = source["suggestionId"];
+	        this.passed = source["passed"];
+	        this.model = source["model"];
+	        this.tokensIn = source["tokensIn"];
+	        this.tokensOut = source["tokensOut"];
+	        this.at = source["at"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class AccountantSession {
+	    id: string;
+	    turns: AccountantTurn[];
+	    asks: number;
+	    busy: boolean;
+	    updated: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountantSession(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.turns = this.convertValues(source["turns"], AccountantTurn);
+	        this.asks = source["asks"];
+	        this.busy = source["busy"];
+	        this.updated = source["updated"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class AccountsView {
 	    rows: AccountRow[];
 	    total: number;

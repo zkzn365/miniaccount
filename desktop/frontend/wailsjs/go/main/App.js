@@ -42,6 +42,18 @@ export function AccountOptions() {
   return window['go']['main']['App']['AccountOptions']();
 }
 
+export function AccountantReset(arg1) {
+  return window['go']['main']['App']['AccountantReset'](arg1);
+}
+
+export function AccountantSend(arg1) {
+  return window['go']['main']['App']['AccountantSend'](arg1);
+}
+
+export function AccountantSession(arg1) {
+  return window['go']['main']['App']['AccountantSession'](arg1);
+}
+
 export function Accounts() {
   return window['go']['main']['App']['Accounts']();
 }

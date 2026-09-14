@@ -26,6 +26,12 @@ export function AccountKinds():Promise<main.AccountKindsView>;
 
 export function AccountOptions():Promise<Array<service.AccountOption>>;
 
+export function AccountantReset(arg1:string):Promise<service.AccountantSession>;
+
+export function AccountantSend(arg1:main.AccountantSendRequest):Promise<service.AccountantSession>;
+
+export function AccountantSession(arg1:string):Promise<service.AccountantSession>;
+
 export function Accounts():Promise<service.AccountsView>;
 
 export function Accrue(arg1:main.AccrueRequest):Promise<service.AccrualResult>;

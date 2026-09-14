@@ -826,19 +826,7 @@ func (s *Service) AISuggest(ctx context.Context, in AISuggestInput) (*AISuggestR
 	}
 	if res.Proposal != nil {
 		out.Confidence = res.Proposal.Confidence
-		v, verr := res.Proposal.Materialize("AI 提议", nil)
-		if verr == nil {
-			out.Voucher = &VoucherDraft{
-				Word: string(v.Word), BizDate: v.BizDate.String(),
-				Remark: v.Remark, Total: v.TotalDebit(),
-			}
-			for _, e := range v.Entries {
-				out.Voucher.Entries = append(out.Voucher.Entries, ClosingEntry{
-					AccountCode: e.AccountCode, Summary: e.Summary,
-					Debit: e.Debit, Credit: e.Credit, AuxDesc: auxDesc(e.Aux),
-				})
-			}
-		}
+		out.Voucher = s.voucherDraftOf(ctx, res.Proposal)
 	}
 	if res.Report != nil {
 		out.Failures = checkInfos(res.Report.Failures())

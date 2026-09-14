@@ -366,6 +366,12 @@ export const api = {
   saveAIProvider: (cfg) => call(A().SaveAIProvider, cfg),
   aiSuggestions: (limit) => call(A().AISuggestions, limit),
   acceptAISuggestion: (req) => call(A().AcceptAISuggestion, req),
+  // 会计（对话式记账）：只有一个业务描述输入框，缺什么由会计问。
+  // 会话存在服务端内存里，重启会清空 —— 它是操作过程的中间状态，
+  // 不是账务数据（账务数据是那张凭证草稿，一落库就有完整轨迹）。
+  accountantSend: (req) => call(A().AccountantSend, req),
+  accountantSession: (id) => call(A().AccountantSession, id ?? ''),
+  accountantReset: (id) => call(A().AccountantReset, id ?? ''),
   rejectAISuggestion: (req) => call(A().RejectAISuggestion, req),
   auditLog: (q) => call(A().AuditLog, q),
   bookkeeper: () => call(A().Bookkeeper),
@@ -375,6 +381,10 @@ export const api = {
   verifyAuditLog: () => call(A().VerifyAuditLog),
   exportAuditLog: (q, dest) => call(A().ExportAuditLog, q, dest),
   aiAgentSources: () => call(A().AIAgentSources),
+  // ★ 批量记账：后端能力仍在（interface 与测试都保留），
+  // 但「AI 记账助手」页面上已经**没有入口**了 —— 那一页现在只有
+  // 一个业务描述框，缺什么由会计问。留在这里是因为它随时可能
+  // 以另一个形态回来（比如「把没记账的流水交给它跑一遍」）。
   startAIAgentRun: (req) => call(A().StartAIAgentRun, req),
   aiAgentRunStatus: (id) => call(A().AIAgentRunStatus, id),
   latestAIAgentRun: () => call(A().LatestAIAgentRun),
@@ -790,6 +800,23 @@ export const mockApp = {
     failures: [], warnings: [],
   }),
   AcceptAISuggestion: async () => ({ voucherId: 9, voucherNo: '记-2025-03-0009', summary: '已生成草稿凭证' }),
+  AccountantSend: async () => ({
+    id: 'dev', asks: 1, busy: false, updated: '',
+    turns: [
+      { role: 'user', text: '昨天买了台打印机', at: '' },
+      { role: 'accountant', text: '这台打印机的付款方式和发票情况是什么？', at: '',
+        question: {
+          header: '付款与发票',
+          question: '这台打印机的付款方式和发票情况是什么？',
+          options: [
+            { label: '银行转账，取得增值税专用发票（推荐）', description: '可抵扣进项税，挂应付账款或直接冲银行', recommended: true },
+            { label: '现金支付，只有收据', description: '无进项税可抵，全额计入管理费用', recommended: false },
+          ],
+        } },
+    ],
+  }),
+  AccountantSession: async () => ({ id: 'dev', asks: 0, busy: false, updated: '', turns: [] }),
+  AccountantReset: async () => ({ id: '', asks: 0, busy: false, updated: '', turns: [] }),
   RejectAISuggestion: async () => null,
   Bookkeeper: async () => '李会计',
   SaveBookkeeper: async () => null,

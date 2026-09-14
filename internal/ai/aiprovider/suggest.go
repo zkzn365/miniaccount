@@ -281,6 +281,23 @@ func (s *Suggester) Suggest(ctx context.Context, in Input, targetType string,
 	}
 
 	// 5. 解析 + 护栏
+	return s.ValidateProposal(ctx, resp, lctx, digest, in, targetType, targetID)
+}
+
+// ValidateProposal 对模型返回的内容做解析、护栏校验与审计。
+//
+// ★ 从 Suggest 里抽出来，是为了让**对话式会计**走同一段代码。
+//
+// 多了一轮追问，不该让校验标准有任何放松 —— 而两份实现迟早会分叉，
+// 分叉的那一天，「AI 记的账」就有了两条松紧不同的路。
+// 护栏只有一份，这条规则比复用几个函数重要得多。
+func (s *Suggester) ValidateProposal(ctx context.Context, resp *Response,
+	lctx *ledger.Context, digest string, in Input,
+	targetType string, targetID *int64) *Result {
+
+	if resp == nil {
+		return &Result{Layer: ai.LayerAI, Err: errors.New("ai: 没有模型返回内容")}
+	}
 	prop, perr := ai.Parse(resp.Content)
 	if perr != nil {
 		id := s.record(ctx, SuggestionRecord{
