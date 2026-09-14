@@ -1,16 +1,20 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
 import {
-  Sparkles, Send, Eraser, Lock, Info, Check, X,
+  Sparkles, Send, Eraser, Lock, Info, Check, X, Wand2, Eye, RotateCcw,
 } from 'lucide-vue-next'
 import { api, notify, DRAFT_HINT } from '@/lib/api'
 import { bookkeeper, loadBookkeeper, rememberBookkeeper } from '@/lib/operator'
 import { fmtMoney } from '@/lib/format'
 import Card from '@/components/ui/Card.vue'
+import CardHeader from '@/components/ui/CardHeader.vue'
+import CardTitle from '@/components/ui/CardTitle.vue'
+import CardDescription from '@/components/ui/CardDescription.vue'
 import CardContent from '@/components/ui/CardContent.vue'
 import Button from '@/components/ui/Button.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Input from '@/components/ui/Input.vue'
+import Label from '@/components/ui/Label.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 
 // ---------------------------------------------------------------------------
@@ -52,6 +56,7 @@ const pendingQuestion = computed(() => {
 
 onMounted(async () => {
   await loadBookkeeper()
+  await loadPrompt()
 })
 
 async function scrollToEnd() {
@@ -115,6 +120,63 @@ async function reject(turn) {
   deciding.value = false
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
   notify('已记录', 'success')
+}
+
+// ---- 执业要求（提示词）----
+//
+// ★ 这是唯一能改「这位会计怎么记账」的地方，所以放在这一页而不是设置页：
+// 用户改它的动机永远来自「刚才那笔记得不对」，那一刻他就在这一页。
+//
+// 可改的只有中间那段「记账要求」。硬边界（科目闭集、借贷相等、
+// 金额不许改）与输出格式由程序固定 —— 前者是「不许幻觉」的底线，
+// 后者是护栏解析的依据，改了会直接读不出来。界面上必须写明这一点，
+// 否则用户会以为「我改了没生效」。
+const promptOpen = ref(false)
+const prompt = ref(null)
+const promptDraft = ref({ instructions: '' })
+const promptBusy = ref(false)
+const preview = ref(null)
+
+async function loadPrompt() {
+  const r = await api.aiPromptConfig()
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  prompt.value = r.data
+  promptDraft.value = { instructions: r.data.instructions }
+}
+
+async function savePrompt() {
+  promptBusy.value = true
+  const r = await api.saveAIPromptConfig({
+    instructions: promptDraft.value.instructions,
+    taskNotes: prompt.value?.taskNotes ?? {},
+  })
+  promptBusy.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify('执业要求已保存 —— 下一句话就会按新的来', 'success')
+  preview.value = null
+  await loadPrompt()
+}
+
+async function resetPrompt() {
+  if (!confirm('恢复成出厂默认？你自己改过的内容会丢掉。')) return
+  promptBusy.value = true
+  const r = await api.resetAIPromptConfig()
+  promptBusy.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify('已恢复出厂默认', 'success')
+  preview.value = null
+  await loadPrompt()
+}
+
+// ★ 预览走的是**会计版**提示词 —— 也就是这个页面真正发出去的那一份。
+// 渲染成单次任务版的话，用户看到的东西少一节「与用户对话」，
+// 而那一节恰好是「什么时候该问」。
+async function doPreview() {
+  promptBusy.value = true
+  const r = await api.previewAccountantPrompt()
+  promptBusy.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  preview.value = r.data
 }
 
 const EXAMPLES = [
@@ -288,6 +350,55 @@ const EXAMPLES = [
           Enter 发送。会计给出的凭证是<b>草稿</b>：不占凭证号、不进总账，
           到「账期管理」结账时才统一过账。
         </p>
+      </CardContent>
+    </Card>
+
+    <!-- 执业要求（提示词）-->
+    <Card>
+      <CardHeader>
+        <button class="flex w-full items-center gap-2 text-left" @click="promptOpen = !promptOpen">
+          <Wand2 class="size-4 text-primary" />
+          <CardTitle class="flex-1">这位会计的执业要求</CardTitle>
+          <Badge :variant="prompt?.custom ? 'warn' : 'muted'">
+            {{ prompt?.custom ? '已自定义' : '出厂默认' }}
+          </Badge>
+        </button>
+        <CardDescription>
+          比如「我们是小规模纳税人，进项税一律不抵扣」「房租走 560210，不要用 560204」。
+          改完下一句话就生效。硬边界（科目只能选账套里有的、借贷必须相等、
+          金额不许改）由程序固定，改不了 —— 那是护栏的地基。
+        </CardDescription>
+      </CardHeader>
+      <CardContent v-if="promptOpen" class="flex flex-col gap-3">
+        <div>
+          <Label>记账要求</Label>
+          <textarea
+            v-model="promptDraft.instructions"
+            rows="8"
+            class="mt-1.5 w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <Button size="sm" :disabled="promptBusy" @click="savePrompt">
+            <Wand2 class="size-3.5" /> 保存
+          </Button>
+          <Button size="sm" variant="outline" :disabled="promptBusy" @click="doPreview">
+            <Eye class="size-3.5" /> 预览实际提示词
+          </Button>
+          <Button size="sm" variant="ghost" :disabled="promptBusy || !prompt?.custom"
+                  @click="resetPrompt">
+            <RotateCcw class="size-3.5" /> 恢复出厂默认
+          </Button>
+          <span v-if="preview" class="text-xs text-muted-foreground">
+            系统提示词 {{ preview.chars }} 字 · 指纹 {{ String(preview.digest).slice(0, 12) }}
+          </span>
+        </div>
+        <div v-if="preview" class="rounded-lg border bg-muted/20">
+          <p class="border-b px-3 py-1.5 text-xs font-medium text-muted-foreground">
+            实际发给模型的系统提示词（含「与用户对话」一节）
+          </p>
+          <pre class="max-h-72 overflow-auto whitespace-pre-wrap px-3 py-2 text-xs">{{ preview.system }}</pre>
+        </div>
       </CardContent>
     </Card>
 

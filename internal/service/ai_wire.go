@@ -241,7 +241,24 @@ type AIPromptPreview struct {
 // ★ 预览必须是**真的**：用同一套 SystemPrompt/UserPrompt 生成，
 // 只是把「这笔业务」换成一个示例。另写一份预览逻辑必然与真实
 // 提示词漂移，而用户是照着预览判断「我的设置生效了没有」的。
+//
+// accountant = true 时渲染**对话式会计**那一版（多一节「与用户对话」）。
+//
+// ★ 这一条是必须的：AI 记账助手页面用的就是会计版，
+// 而预览如果只渲染单次任务版，用户改完「记账要求」点预览，
+// 看到的是一份**与他实际用的不完全一样**的提示词 ——
+// 少的那一节恰好就是「什么时候该问」。照着预览判断设置生效没有，
+// 会得出错误结论。
 func (s *Service) PreviewAIPrompt(ctx context.Context, task string) (*AIPromptPreview, error) {
+	return s.previewAIPrompt(ctx, task, false)
+}
+
+// PreviewAccountantPrompt 渲染对话式会计实际会用的那份提示词。
+func (s *Service) PreviewAccountantPrompt(ctx context.Context) (*AIPromptPreview, error) {
+	return s.previewAIPrompt(ctx, "freeform", true)
+}
+
+func (s *Service) previewAIPrompt(ctx context.Context, task string, accountant bool) (*AIPromptPreview, error) {
 	t := aiTask(task)
 	c, err := s.db.AI().PromptConfig(ctx)
 	if err != nil {
@@ -267,6 +284,9 @@ func (s *Service) PreviewAIPrompt(ctx context.Context, task string) (*AIPromptPr
 		}
 	}
 	sys := aiprovider.SystemPrompt(in)
+	if accountant {
+		sys = aiprovider.AccountantSystemPrompt(in)
+	}
 	usr := aiprovider.UserPrompt(in)
 	return &AIPromptPreview{
 		System: sys, User: usr,

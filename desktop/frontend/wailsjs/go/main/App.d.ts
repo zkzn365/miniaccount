@@ -6,10 +6,6 @@ import {sqlite} from '../models';
 import {payroll} from '../models';
 import {audit} from '../models';
 
-export function AIAgentRunStatus(arg1:string):Promise<service.AIAgentRun>;
-
-export function AIAgentSources():Promise<Array<main.ServiceSourceOption>>;
-
 export function AIConfig():Promise<service.AIConfig>;
 
 export function AIPromptConfig():Promise<service.AIPromptView>;
@@ -17,8 +13,6 @@ export function AIPromptConfig():Promise<service.AIPromptView>;
 export function AISuggest(arg1:main.AISuggestRequest):Promise<service.AISuggestResult>;
 
 export function AISuggestions(arg1:number):Promise<Array<sqlite.SuggestionRow>>;
-
-export function AcceptAIAgentItem(arg1:main.AIAgentItemRequest):Promise<service.AIAcceptResult>;
 
 export function AcceptAISuggestion(arg1:main.AIAcceptRequest):Promise<service.AIAcceptResult>;
 
@@ -73,8 +67,6 @@ export function BankStats():Promise<service.BankStats>;
 export function Bookkeeper():Promise<string>;
 
 export function BuildPayroll(arg1:main.PayrollRunRequest):Promise<service.PayrollRunDetail>;
-
-export function CancelAIAgentRun(arg1:string):Promise<void>;
 
 export function CheckVoucher(arg1:main.VoucherRequest):Promise<main.VoucherCheckResult>;
 
@@ -170,8 +162,6 @@ export function Invoices(arg1:main.InvoiceQueryRequest):Promise<Array<service.In
 
 export function JudgeDeduction(arg1:service.DeductionRequest):Promise<service.DeductionView>;
 
-export function LatestAIAgentRun():Promise<service.AIAgentRun>;
-
 export function LedgerDetail(arg1:main.LedgerRequest):Promise<main.LedgerResult>;
 
 export function ListBooks():Promise<main.BookList>;
@@ -200,11 +190,11 @@ export function PostPayroll(arg1:number,arg2:string):Promise<service.PayrollRunD
 
 export function PreviewAIPrompt(arg1:string):Promise<service.AIPromptPreview>;
 
+export function PreviewAccountantPrompt():Promise<service.AIPromptPreview>;
+
 export function PreviewAccrual(arg1:main.PeriodRequest):Promise<service.AccrualPreview>;
 
 export function PreviewClose(arg1:main.PeriodRequest):Promise<service.ClosingPreview>;
-
-export function RejectAIAgentItem(arg1:main.AIAgentItemRequest):Promise<void>;
 
 export function RejectAISuggestion(arg1:main.AIAcceptRequest):Promise<void>;
 
@@ -269,8 +259,6 @@ export function SetBankSuggestion(arg1:main.BankSuggestionRequest):Promise<servi
 export function SetEnterpriseScale(arg1:string):Promise<void>;
 
 export function SetVATStatus(arg1:main.SetVATStatusRequest):Promise<void>;
-
-export function StartAIAgentRun(arg1:service.AIAgentRequest):Promise<service.AIAgentRun>;
 
 export function Statement(arg1:main.StatementRequest):Promise<service.StatementView>;
 

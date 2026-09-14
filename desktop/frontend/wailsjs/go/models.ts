@@ -176,24 +176,6 @@ export namespace main {
 	        this.createdBy = source["createdBy"];
 	    }
 	}
-	export class AIAgentItemRequest {
-	    runId: string;
-	    index: number;
-	    createdBy: string;
-	    reason: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new AIAgentItemRequest(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.runId = source["runId"];
-	        this.index = source["index"];
-	        this.createdBy = source["createdBy"];
-	        this.reason = source["reason"];
-	    }
-	}
 	export class AISuggestRequest {
 	    task: string;
 	    text: string;
@@ -1366,20 +1348,6 @@ export namespace main {
 	        this.date = source["date"];
 	    }
 	}
-	export class ServiceSourceOption {
-	    value: string;
-	    label: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ServiceSourceOption(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.value = source["value"];
-	        this.label = source["label"];
-	    }
-	}
 	export class SetVATStatusRequest {
 	    status: string;
 	    from: string;
@@ -1776,186 +1744,6 @@ export namespace service {
 	        this.summary = source["summary"];
 	    }
 	}
-	export class ClosingEntry {
-	    accountCode: string;
-	    summary: string;
-	    debit: number;
-	    credit: number;
-	    auxDesc: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ClosingEntry(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.accountCode = source["accountCode"];
-	        this.summary = source["summary"];
-	        this.debit = source["debit"];
-	        this.credit = source["credit"];
-	        this.auxDesc = source["auxDesc"];
-	    }
-	}
-	export class VoucherDraft {
-	    word: string;
-	    bizDate: string;
-	    remark: string;
-	    entries: ClosingEntry[];
-	    total: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new VoucherDraft(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.word = source["word"];
-	        this.bizDate = source["bizDate"];
-	        this.remark = source["remark"];
-	        this.entries = this.convertValues(source["entries"], ClosingEntry);
-	        this.total = source["total"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class AIAgentItem {
-	    targetType: string;
-	    targetId: number;
-	    label: string;
-	    ok: boolean;
-	    suggestionId: number;
-	    summary: string;
-	    error?: string;
-	    confidence: number;
-	    failures?: string[];
-	    warnings?: string[];
-	    voucher?: VoucherDraft;
-	    decision?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new AIAgentItem(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.targetType = source["targetType"];
-	        this.targetId = source["targetId"];
-	        this.label = source["label"];
-	        this.ok = source["ok"];
-	        this.suggestionId = source["suggestionId"];
-	        this.summary = source["summary"];
-	        this.error = source["error"];
-	        this.confidence = source["confidence"];
-	        this.failures = source["failures"];
-	        this.warnings = source["warnings"];
-	        this.voucher = this.convertValues(source["voucher"], VoucherDraft);
-	        this.decision = source["decision"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class AIAgentRequest {
-	    Source: string;
-	    Limit: number;
-	    Date: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new AIAgentRequest(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Source = source["Source"];
-	        this.Limit = source["Limit"];
-	        this.Date = source["Date"];
-	    }
-	}
-	export class AIAgentRun {
-	    id: string;
-	    source: string;
-	    state: string;
-	    total: number;
-	    done: number;
-	    okCount: number;
-	    items: AIAgentItem[];
-	    model: string;
-	    error?: string;
-	    startedAt: string;
-	    finishedAt?: string;
-	    tokensIn: number;
-	    tokensOut: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new AIAgentRun(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.source = source["source"];
-	        this.state = source["state"];
-	        this.total = source["total"];
-	        this.done = source["done"];
-	        this.okCount = source["okCount"];
-	        this.items = this.convertValues(source["items"], AIAgentItem);
-	        this.model = source["model"];
-	        this.error = source["error"];
-	        this.startedAt = source["startedAt"];
-	        this.finishedAt = source["finishedAt"];
-	        this.tokensIn = source["tokensIn"];
-	        this.tokensOut = source["tokensOut"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
 	export class AIConfig {
 	    providers: sqlite.AIProviderConfig[];
 	    stats: sqlite.AIStats;
@@ -2105,6 +1893,64 @@ export namespace service {
 	        this.detail = source["detail"];
 	        this.count = source["count"];
 	    }
+	}
+	export class ClosingEntry {
+	    accountCode: string;
+	    summary: string;
+	    debit: number;
+	    credit: number;
+	    auxDesc: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ClosingEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accountCode = source["accountCode"];
+	        this.summary = source["summary"];
+	        this.debit = source["debit"];
+	        this.credit = source["credit"];
+	        this.auxDesc = source["auxDesc"];
+	    }
+	}
+	export class VoucherDraft {
+	    word: string;
+	    bizDate: string;
+	    remark: string;
+	    entries: ClosingEntry[];
+	    total: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new VoucherDraft(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.word = source["word"];
+	        this.bizDate = source["bizDate"];
+	        this.remark = source["remark"];
+	        this.entries = this.convertValues(source["entries"], ClosingEntry);
+	        this.total = source["total"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class AISuggestResult {
 	    ok: boolean;

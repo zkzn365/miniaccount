@@ -119,7 +119,6 @@ func checkNoNullArrays(t *testing.T, a *App) {
 		// 顶层数组没问题是假象，崩点在行内数组上。
 		{"BankReconciliation", func() any { v, _ := a.BankReconciliation(ReconciliationRequest{}); return v }},
 		{"VoucherDetail", func() any { v, _ := a.VoucherDetail(1); return v }},
-		{"AIAgentRunStatus", func() any { v, _ := a.AIAgentRunStatus("0"); return v }},
 	}
 
 	for _, c := range calls {

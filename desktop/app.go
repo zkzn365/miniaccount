@@ -818,6 +818,19 @@ func (a *App) ResetAIPromptConfig() (err error) {
 	return classify(svc.ResetAIPromptConfig(a.context()))
 }
 
+// PreviewAccountantPrompt 渲染对话式会计**真实**会用的那份提示词。
+//
+// 与 PreviewAIPrompt 分开：AI 记账助手页面上用的是会计版，
+// 预览必须是同一份 —— 否则用户改完设置点预览，看到的是另一份东西。
+func (a *App) PreviewAccountantPrompt() (out *service.AIPromptPreview, err error) {
+	defer recoverTo(&err, "PreviewAccountantPrompt")()
+	svc, f := a.book()
+	if f != nil {
+		return nil, f
+	}
+	return wrap(svc.PreviewAccountantPrompt(a.context()))
+}
+
 // PreviewAIPrompt 渲染当前设置下**真实**会发给模型的提示词。
 func (a *App) PreviewAIPrompt(task string) (out *service.AIPromptPreview, err error) {
 	defer recoverTo(&err, "PreviewAIPrompt")()

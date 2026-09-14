@@ -1050,6 +1050,49 @@ test('★ AI 记账助手只剩一个业务描述框，其余交给会计问', a
 
   // 硬边界要写在页面上（会计不能写账这件事，用户得知道）
   assert.ok(/通不过护栏|不能写账/.test(t), `页面上没写清会计的能力边界：${t.slice(0, 400)}`)
+
+  // 批量记账删干净了：页面上没有，绑定层也没有
+  assert.ok(!t.includes('批量记账'), `页面上还留着批量记账：${t.slice(0, 400)}`)
+  const dts = fs.readFileSync(path.join(here, '../wailsjs/go/main/App.d.ts'), 'utf8')
+  for (const gone of ['StartAIAgentRun', 'AIAgentRunStatus', 'LatestAIAgentRun',
+    'CancelAIAgentRun', 'AcceptAIAgentItem', 'RejectAIAgentItem', 'AIAgentSources']) {
+    assert.ok(!dts.includes(gone),
+      `★ 绑定 ${gone} 还在 —— 批量记账应当端到端删干净`)
+  }
+})
+
+// ★ 执业要求（提示词）留在页面上：这是唯一能改「这位会计怎么记账」的地方
+test('★ AI 记账助手能改这位会计的执业要求', async () => {
+  await page.goto('/ai')
+  await settle(100)
+  const t = page.text()
+  assert.ok(t.includes('执业要求'), `页面上没有执业要求一块：${t.slice(0, 300)}`)
+
+  await page.click('执业要求')
+  await settle(80)
+  const box = [...win.document.body.querySelectorAll('textarea')]
+    .find((a) => (a.value || '').length > 50)
+  assert.ok(box, '执业要求展开后没有可编辑的文本框')
+  assert.ok(box.value.length > 50,
+    `编辑框里应当是当前生效的全文，实际只有 ${box.value.length} 字`)
+
+  for (const label of ['保存', '预览实际提示词', '恢复出厂默认']) {
+    assert.ok([...win.document.body.querySelectorAll('button')]
+      .some((b) => b.textContent.replace(/\s+/g, '').includes(label)),
+    `找不到「${label}」按钮`)
+  }
+
+  // ★ 预览必须是**会计版**的提示词 —— 里面要有一节「与用户对话」。
+  // 渲染成单次任务版的话，用户看到的少一节，而那一节恰好是
+  // 「什么时候该问」。
+  const pv = await bundle.api.api.previewAccountantPrompt()
+  assert.equal(pv.ok, true, pv.fault?.message)
+  assert.ok(pv.data.system.includes('与用户对话'),
+    '★ 预览出来的不是会计版提示词 —— 少了「与用户对话」那一节')
+  assert.ok(pv.data.system.includes('ask_user'),
+    '会计版提示词里该讲清楚用哪个工具问')
+  assert.ok(pv.data.system.includes('只能使用下面列出的科目编码'),
+    '会计版丢了硬边界（科目闭集）—— 预览与实际用的必须是同一份')
 })
 
 // 没有配置模型时，要给一句**能照着做**的提示，而不是静默失败

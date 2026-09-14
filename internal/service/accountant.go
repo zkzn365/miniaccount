@@ -363,6 +363,22 @@ func (s *Service) accountantDigest(in aiprovider.Input) string {
 	return ai.Digest(aiprovider.AccountantSystemPrompt(in))
 }
 
+// checkTitles 把护栏结论转成界面直接显示的一行行文字。
+//
+// 带 detail 的写成「标题：细节」——「科目不存在」这种标题看不出是哪个科目，
+// 而用户要改的恰恰是那个科目。
+func checkTitles(cs []ai.Check) []string {
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		if c.Detail != "" {
+			out = append(out, c.Title+"："+c.Detail)
+			continue
+		}
+		out = append(out, c.Title)
+	}
+	return out
+}
+
 func toServiceOptions(opts []aiprovider.AccountantOption) []AccountantOption {
 	out := make([]AccountantOption, 0, len(opts))
 	for _, o := range opts {

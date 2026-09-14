@@ -380,21 +380,13 @@ export const api = {
   saveAuditSettings: (s) => call(A().SaveAuditSettings, s),
   verifyAuditLog: () => call(A().VerifyAuditLog),
   exportAuditLog: (q, dest) => call(A().ExportAuditLog, q, dest),
-  aiAgentSources: () => call(A().AIAgentSources),
-  // ★ 批量记账：后端能力仍在（interface 与测试都保留），
-  // 但「AI 记账助手」页面上已经**没有入口**了 —— 那一页现在只有
-  // 一个业务描述框，缺什么由会计问。留在这里是因为它随时可能
-  // 以另一个形态回来（比如「把没记账的流水交给它跑一遍」）。
-  startAIAgentRun: (req) => call(A().StartAIAgentRun, req),
-  aiAgentRunStatus: (id) => call(A().AIAgentRunStatus, id),
-  latestAIAgentRun: () => call(A().LatestAIAgentRun),
-  cancelAIAgentRun: (id) => call(A().CancelAIAgentRun, id),
-  acceptAIAgentItem: (req) => call(A().AcceptAIAgentItem, req),
-  rejectAIAgentItem: (req) => call(A().RejectAIAgentItem, req),
   aiPromptConfig: () => call(A().AIPromptConfig),
   saveAIPromptConfig: (input) => call(A().SaveAIPromptConfig, input),
   resetAIPromptConfig: () => call(A().ResetAIPromptConfig),
   previewAIPrompt: (task) => call(A().PreviewAIPrompt, task),
+  // 会计版提示词预览：AI 记账助手页面上用的就是这一份，
+  // 预览必须与它一致（多一节「与用户对话」）。
+  previewAccountantPrompt: () => call(A().PreviewAccountantPrompt),
 
   today: () => call(A().Today),
   appVersion: () => call(A().AppVersion),
@@ -849,37 +841,6 @@ export const mockApp = {
   }),
   VerifyAuditLog: async () => ({ ok: true, checked: 2, files: 1, head: 'a'.repeat(64), issues: [] }),
   ExportAuditLog: async () => 2,
-  AIAgentSources: async () => ([
-    { value: 'bank_flows', label: '银行流水' },
-    { value: 'invoices', label: '发票' },
-    { value: 'claims', label: '报销单' },
-  ]),
-  StartAIAgentRun: async () => ({
-    id: 'run-1', source: 'bank_flows', state: 'running', total: 3, done: 0,
-    okCount: 0, model: 'qwen2.5:7b', items: [], tokensIn: 0, tokensOut: 0,
-    startedAt: '2026-09-12 15:00:00+08:00',
-  }),
-  AIAgentRunStatus: async () => ({
-    id: 'run-1', source: 'bank_flows', state: 'done', total: 3, done: 3,
-    okCount: 2, model: 'qwen2.5:7b', tokensIn: 900, tokensOut: 300,
-    startedAt: '2026-09-12 15:00:00+08:00', finishedAt: '2026-09-12 15:00:24+08:00',
-    items: [
-      { targetType: 'bank_flow', targetId: 1, label: '2025-03-05 收入 杭州云帆科技 106,000.00',
-        ok: true, suggestionId: 11, summary: '提议 2 条分录，通过全部护栏', confidence: 0.92,
-        voucher: { word: '记', bizDate: '2025-03-05', remark: '收到货款', total: 10600000,
-          entries: [
-            { accountCode: '1002', summary: '收到货款', debit: 10600000, credit: 0, auxDesc: '' },
-            { accountCode: '1122', summary: '收到货款', debit: 0, credit: 10600000, auxDesc: '客户#1' },
-          ] } },
-      { targetType: 'bank_flow', targetId: 2, label: '2025-03-12 支出 杭州某某物业 30,000.00',
-        ok: false, suggestionId: 12, summary: '未通过护栏',
-        failures: ['缺少必需的辅助核算：科目 管理费用 要求「部门」'] },
-    ],
-  }),
-  LatestAIAgentRun: async () => null,
-  CancelAIAgentRun: async () => null,
-  AcceptAIAgentItem: async () => ({ voucherId: 9, voucherNo: '', summary: '已按 AI 建议生成草稿凭证 （草稿 #9），请核对后过账' }),
-  RejectAIAgentItem: async () => null,
   AIPromptConfig: async () => ({
     instructions: '# 记账的基本原则\n\n- 权责发生制。\n- 银行流水判断对方科目。',
     custom: false,
@@ -896,6 +857,11 @@ export const mockApp = {
   }),
   SaveAIPromptConfig: async () => null,
   ResetAIPromptConfig: async () => null,
+  PreviewAccountantPrompt: async () => ({
+    system: '你是一名中国小微企业的资深会计……\n# 与用户对话\n用 ask_user 工具 —— 不要用一段文字提问。',
+    user: '业务描述：收到杭州某某科技有限公司货款',
+    digest: 'dev', chars: 8000, task: 'freeform',
+  }),
   PreviewAIPrompt: async () => ({
     system: '（预览）你是一名中国小微企业的资深会计……', user: '（预览）请为下列业务编制记账凭证',
     digest: '0'.repeat(64), chars: 4000, task: 'bank_flow',
