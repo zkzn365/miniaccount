@@ -45,7 +45,18 @@ type Tool struct {
 	//
 	// ★ 用一个标记位而不是「返回一个特殊错误」：错误会被回灌给模型
 	// 让它重试，而这里要的是**正常结束**，不是失败。
+	//
+	// ★★ 注意：终止型工具**不会**在对话历史里留下 tool_calls。
+	// 因为没有任何 tool 消息能应答它 —— 留着就是一条悬空的调用，
+	// 而 OpenAI 兼容的接口会直接拒绝整个请求（HTTP 400）。
+	// 详见 RunConversation 里的说明。
 	Terminal bool
+	// RenderAsk 把终止型工具的调用参数渲染成一句人话，写进对话历史。
+	//
+	// 历史里那条消息是**普通 assistant 消息**（没有 tool_calls），
+	// 内容就是这个。留它是为了让模型下一轮看得见自己问过什么，
+	// 也让会话记录本身读得懂。留空则退回原始参数。
+	RenderAsk func(args json.RawMessage) string
 }
 
 // ToolSet 是工具集合。
@@ -195,7 +206,10 @@ func (a *Agent) RunConversation(ctx context.Context, history []Message) (*AgentR
 	res := &AgentResult{}
 	// ★ 工具结果要按原样回灌给模型 ——
 	// 模型是靠看到工具返回的内容来决定下一步的。
-	history = append([]Message(nil), history...)
+	//
+	// 发出去之前先过一遍协议检查：悬空的 tool_calls 会让接口直接 400，
+	// 而用户对此毫无办法（详见 sanitizeHistory）。
+	history = sanitizeHistory(append([]Message(nil), history...))
 
 	for round := 1; round <= opts.MaxRounds; round++ {
 		res.Rounds = round
@@ -219,6 +233,38 @@ func (a *Agent) RunConversation(ctx context.Context, history []Message) (*AgentR
 			return res, history, nil
 		}
 
+		// ★ 终止型工具（问用户）要在**写历史之前**先认出来。
+		//
+		// 曾经的写法是：先按原样追加「assistant + tool_calls」，
+		// 再在循环里发现是 ask_user 就 return。结果是历史里留下一条
+		// **没人应答的 tool_calls** —— 下一轮请求发出去，OpenAI 兼容
+		// 的接口直接 400：
+		//
+		//   An assistant message with 'tool_calls' must be followed by
+		//   tool messages responding to each 'tool_call_id'.
+		//
+		// 用户看到的就是「选择选项之后报错」。
+		//
+		// 修法是：这一轮**根本不写 tool_calls**，只写一条普通的
+		// assistant 消息，内容是这次提问。于是没有任何 id 需要应答，
+		// 协议恒定成立；而模型下一轮照样看得见自己问过什么
+		// （用户那句回答里也会带上问题原文，见 AnswerMessage）。
+		//
+		// 顺带解决「一次返回多个工具调用」的情形：整条消息的
+		// tool_calls 一起去掉，不存在漏答哪个的问题。
+		if ask, ok := terminalCall(a.Tools, resp.ToolCalls); ok {
+			rec := ToolCallRecord{
+				Round: round, Name: ask.Name, Args: ask.Arguments,
+			}
+			res.Asked = &rec
+			res.ToolCalls = append(res.ToolCalls, rec)
+			history = append(history, Message{
+				Role:    "assistant",
+				Content: renderAsk(a.Tools, ask),
+			})
+			return res, history, nil
+		}
+
 		// 把模型的工具调用意图记进对话
 		history = append(history, Message{
 			Role: "assistant", Content: resp.Content,
@@ -230,15 +276,6 @@ func (a *Agent) RunConversation(ctx context.Context, history []Message) (*AgentR
 				Round: round, Name: tc.Name, Args: tc.Arguments,
 			}
 			tool, ok := a.Tools.Get(tc.Name)
-			// ★ 终止型工具（问用户）：不执行、不续轮，直接结束本次循环。
-			//
-			// 历史里要留下这次调用，下一轮用户答完之后接着往下说 ——
-			// 所以 assistant 的那条消息已经在上面追加过了。
-			if ok && tool.Terminal {
-				res.Asked = &rec
-				res.ToolCalls = append(res.ToolCalls, rec)
-				return res, history, nil
-			}
 			if !ok {
 				// ★ 未知工具不报错，而是把「没有这个工具」告诉模型。
 				//
@@ -298,6 +335,82 @@ func rawOrEmpty(s string) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return json.RawMessage(s)
+}
+
+// sanitizeHistory 去掉历史里**没有应答的** tool_calls 消息。
+//
+// # 为什么要有这一道
+//
+// OpenAI 兼容的接口有一条硬性要求：assistant 消息里出现的每一个
+// tool_call_id，都必须紧接着在 tool 消息里得到应答。违反它，
+// 整个请求被拒（HTTP 400），**而且之后每一次请求都会被拒** ——
+// 因为那段坏历史一直留在会话里。用户没有任何自救的办法，
+// 只能重开一段对话（或者重启程序）。
+//
+// 一条坏消息换掉整段对话，代价太不对称，所以在发出去之前统一检查一遍：
+// 宁可丢掉那条消息（对话少一轮上下文），也不发一个非法请求。
+//
+// ★ 它是防线，不是常规路径。正常情况下历史由本函数自己追加，
+// 不可能出现悬空的 tool_calls —— 终止型工具根本不写 tool_calls
+// （见 RunConversation 里的说明），其余工具当场就有结果。
+// 这一段只在下游又冒出新的追加路径、或者别人手搓历史时才生效。
+func sanitizeHistory(msgs []Message) []Message {
+	out := make([]Message, 0, len(msgs))
+	for i := 0; i < len(msgs); i++ {
+		m := msgs[i]
+		if m.Role != "assistant" || len(m.ToolCalls) == 0 {
+			out = append(out, m)
+			continue
+		}
+		// 收集紧随其后的 tool 消息，看它们应答了哪些 id
+		answered := map[string]bool{}
+		j := i + 1
+		for ; j < len(msgs) && msgs[j].Role == "tool"; j++ {
+			answered[msgs[j].ToolCallID] = true
+		}
+		complete := true
+		for _, tc := range m.ToolCalls {
+			if !answered[tc.ID] {
+				complete = false
+				break
+			}
+		}
+		if complete {
+			// 整组（assistant + 它的 tool 结果）原样保留
+			out = append(out, msgs[i:j]...)
+		}
+		// 不完整则整组丢掉：只丢 tool 结果、留下 assistant，
+		// 请求照样非法；只丢 assistant、留下 tool，请求也非法。
+		i = j - 1
+	}
+	return out
+}
+
+// terminalCall 找出这一批工具调用里的终止型工具（问用户）。
+//
+// 返回第一个即可：本工程的提示词要求一次只问一个问题，
+// 真出现了多个也只认第一个，其余随着整条 tool_calls 一起丢掉 ——
+// 反正它们本来也没有结果可以回灌。
+func terminalCall(ts *ToolSet, calls []ToolCall) (ToolCall, bool) {
+	for _, tc := range calls {
+		if t, ok := ts.Get(tc.Name); ok && t.Terminal {
+			return tc, true
+		}
+	}
+	return ToolCall{}, false
+}
+
+// renderAsk 把一次「问用户」的调用渲染成写进对话历史的那句话。
+//
+// 工具可以提供自己的 RenderAsk；没提供就退回原始参数 ——
+// 丑，但至少模型看得见自己刚才要求了什么。
+func renderAsk(ts *ToolSet, tc ToolCall) string {
+	if t, ok := ts.Get(tc.Name); ok && t.RenderAsk != nil {
+		if s := strings.TrimSpace(t.RenderAsk(rawOrEmpty(tc.Arguments))); s != "" {
+			return s
+		}
+	}
+	return "（向用户提问）" + strings.TrimSpace(tc.Arguments)
 }
 
 // toolErrorText 把工具失败渲染成回灌给模型的那段文字。

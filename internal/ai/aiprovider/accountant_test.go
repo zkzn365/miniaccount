@@ -2,6 +2,7 @@ package aiprovider
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -41,8 +42,129 @@ func askStep(args string) *Response {
 	}
 }
 
+// assertToolProtocol 检查发给模型的对话历史满足 OpenAI 的硬性要求：
+//
+//	assistant 消息里出现的每一个 tool_call_id，都必须在**紧随其后的**
+//	tool 消息里得到应答，中间不能插别的角色。
+//
+// ★ 这条不是「风格」而是协议。违反它接口直接返回 400：
+//
+//	An assistant message with 'tool_calls' must be followed by tool
+//	messages responding to each 'tool_call_id'.
+//
+// 曾经就是这么炸的：ask_user 是终止型工具，调用它时循环直接结束，
+// 而那条 assistant 消息**带着 tool_calls** 却没有 tool 消息应答它 ——
+// 用户点完选项，下一轮请求就被拒了。
+func assertToolProtocol(t *testing.T, where string, msgs []Message) {
+	t.Helper()
+	for i := 0; i < len(msgs); i++ {
+		if msgs[i].Role != "assistant" || len(msgs[i].ToolCalls) == 0 {
+			continue
+		}
+		answered := map[string]bool{}
+		for j := i + 1; j < len(msgs); j++ {
+			if msgs[j].Role != "tool" {
+				break
+			}
+			answered[msgs[j].ToolCallID] = true
+		}
+		for _, tc := range msgs[i].ToolCalls {
+			if !answered[tc.ID] {
+				t.Fatalf("%s：第 %d 条 assistant 的 tool_call %q(%s) 没有应答 —— "+
+					"接口会直接 400。历史：%s",
+					where, i, tc.Name, tc.ID, dumpRoles(msgs))
+			}
+		}
+	}
+}
+
+func dumpRoles(msgs []Message) string {
+	parts := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		seg := m.Role
+		if len(m.ToolCalls) > 0 {
+			seg += fmt.Sprintf("(tool_calls=%d)", len(m.ToolCalls))
+		}
+		if m.Role == "tool" {
+			seg += "(" + m.ToolCallID + ")"
+		}
+		parts = append(parts, seg)
+	}
+	return strings.Join(parts, " → ")
+}
+
 func proposeStep(content string) *Response {
 	return &Response{Content: content, Model: "script-1", TokensIn: 10, TokensOut: 20}
+}
+
+// ---------------------------------------------------------------------------
+// ★ 协议边界：悬空的 tool_calls 必须被修掉，不能发出去
+// ---------------------------------------------------------------------------
+
+// TestSanitizeHistoryDropsDanglingToolCalls 守的就是用户报的那个 bug 的
+// 兜底一层：一段带 tool_calls 却没人应答的历史，会让之后**每一次**
+// 请求都被接口拒绝（HTTP 400），用户除了重开对话没有别的办法。
+func TestSanitizeHistoryDropsDanglingToolCalls(t *testing.T) {
+	// 用户当时的历史长这样：assistant 要求调用 ask_user，然后就没有然后了
+	broken := []Message{
+		{Role: "system", Content: "s"},
+		{Role: "user", Content: "买了台打印机"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "c1", Name: "ask_user"}}},
+		{Role: "user", Content: "（回答你刚才的问题…）"},
+	}
+	out := sanitizeHistory(broken)
+	assertToolProtocol(t, "清理之后", out)
+	if len(out) != 3 {
+		t.Fatalf("应当只丢掉那条悬空的 assistant，实际剩 %d 条：%s", len(out), dumpRoles(out))
+	}
+	if out[2].Role != "user" || !strings.Contains(out[2].Content, "回答你刚才的问题") {
+		t.Errorf("用户那句回答不能被丢掉（丢了对话就断了）：%s", dumpRoles(out))
+	}
+
+	// 完整的一组必须原样保留
+	ok := []Message{
+		{Role: "user", Content: "u"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "c1", Name: "search_accounts"}}},
+		{Role: "tool", ToolCallID: "c1", Content: "结果"},
+		{Role: "assistant", Content: "最终答案"},
+	}
+	kept := sanitizeHistory(ok)
+	if len(kept) != 4 {
+		t.Fatalf("完整的一组不该被改动，实际剩 %d 条：%s", len(kept), dumpRoles(kept))
+	}
+
+	// 多个调用只答了一半：整组丢掉（留一半照样非法）
+	half := []Message{
+		{Role: "assistant", ToolCalls: []ToolCall{
+			{ID: "c1", Name: "a"}, {ID: "c2", Name: "b"},
+		}},
+		{Role: "tool", ToolCallID: "c1", Content: "结果"},
+		{Role: "user", Content: "接着说"},
+	}
+	got := sanitizeHistory(half)
+	assertToolProtocol(t, "半个应答", got)
+	if len(got) != 1 || got[0].Role != "user" {
+		t.Errorf("只答了一半的整组都该丢掉，实际：%s", dumpRoles(got))
+	}
+}
+
+// 端到端：一段带着坏历史的会话，第二轮也必须能正常跑
+// （不能因为上一轮的残留就把整段对话废掉）
+func TestAccountantRepairsBrokenHistory(t *testing.T) {
+	prov := &scriptProvider{steps: []*Response{
+		proposeStep(`{"voucher":{"word":"记","biz_date":"2025-03-11","remark":"x","entries":[]},"confidence":0.8,"reasoning":"够了","evidence":[],"warnings":[]}`),
+	}}
+	a := &Accountant{Provider: prov, Tools: NewToolSet(AskUserTool())}
+	broken := []Message{
+		{Role: "system", Content: "s"},
+		{Role: "user", Content: "买了台打印机"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "bad", Name: "ask_user"}}},
+		{Role: "user", Content: "3000"},
+	}
+	if _, _, err := a.Reply(context.Background(), broken); err != nil {
+		t.Fatalf("坏历史应当被修掉而不是让整段对话废掉：%v", err)
+	}
+	assertToolProtocol(t, "修过之后", prov.seen[0])
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +376,11 @@ func TestAccountantKeepsHistoryAcrossTurns(t *testing.T) {
 	}
 	if reply2.Proposal == nil {
 		t.Fatal("第二轮应当给出凭证")
+	}
+
+	// ★ 每次请求的历史都必须是**协议合法**的 —— 追问之后尤其容易破
+	for i, seen := range prov.seen {
+		assertToolProtocol(t, fmt.Sprintf("第 %d 次请求", i+1), seen)
 	}
 
 	// 第二次请求里必须看得见第一轮的问题与回答

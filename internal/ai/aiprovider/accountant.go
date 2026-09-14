@@ -81,6 +81,29 @@ func AskUserTool() Tool {
   "required": ["id", "question"]
 }`),
 		Terminal: true,
+		RenderAsk: func(args json.RawMessage) string {
+			q, err := ParseQuestion(string(args))
+			if err != nil {
+				return ""
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "（向用户提问 #%s）", q.ID)
+			if q.Header != "" {
+				fmt.Fprintf(&b, "%s：", q.Header)
+			}
+			b.WriteString(q.Question)
+			if len(q.Options) > 0 {
+				labels := make([]string, 0, len(q.Options))
+				for _, o := range q.Options {
+					labels = append(labels, o.Label)
+				}
+				fmt.Fprintf(&b, "\n选项：%s", strings.Join(labels, " ｜ "))
+			}
+			if q.MultiSelect {
+				b.WriteString("\n（可多选）")
+			}
+			return b.String()
+		},
 	}
 }
 
