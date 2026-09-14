@@ -909,6 +909,91 @@ func (r *AIRepo) Contacts(ctx context.Context) ([]aiprovider.ContactBrief, error
 	return out, rows.Err()
 }
 
+// Departments 返回部门清单（给 AI 工具用）。
+//
+// ★ 只列**启用**的：停用的部门在新建凭证时选不到，
+// 让模型选到它，计提那天会被护栏打回。
+func (r *AIRepo) Departments(ctx context.Context) ([]aiprovider.DepartmentBrief, error) {
+	rows, err := r.db.sql.QueryContext(ctx, `
+		SELECT id, code, name, parent_id FROM department
+		 WHERE is_enabled = 1 ORDER BY sort_order, code, id`)
+	if err != nil {
+		return nil, translateErr(err)
+	}
+	defer rows.Close()
+
+	type row struct {
+		id     int64
+		code   string
+		name   string
+		parent sql.NullInt64
+	}
+	var list []row
+	byID := map[int64]string{}
+	for rows.Next() {
+		var x row
+		if err := rows.Scan(&x.id, &x.code, &x.name, &x.parent); err != nil {
+			return nil, translateErr(err)
+		}
+		list = append(list, x)
+		byID[x.id] = x.name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, translateErr(err)
+	}
+
+	out := make([]aiprovider.DepartmentBrief, 0, len(list))
+	for _, x := range list {
+		full := x.name
+		// 拼上上级名：账套里出现「销售部」和「销售部/华东区」时，
+		// 只给短名模型分不清是哪一个
+		for p := x.parent; p.Valid; {
+			parent, ok := byID[p.Int64]
+			if !ok {
+				break
+			}
+			full = parent + "/" + full
+			// 只往上追一层；更深的层级在 AI 场景里没必要，
+			// 而且没有 parent 的 parent 可查时继续追会绕成环
+			break
+		}
+		out = append(out, aiprovider.DepartmentBrief{
+			ID: x.id, Code: x.code, Name: x.name, FullName: full,
+		})
+	}
+	return out, nil
+}
+
+// Employees 返回员工清单（给 AI 工具用）。
+//
+// ★ 连**离职**的一起返回，由工具那边按参数过滤。
+//
+// 只列在职的看起来更"干净"，但会漏掉真实场景：补记上个月给某人的报销，
+// 而那个人这个月刚离职。工具给不出 id，模型就只能空着。
+func (r *AIRepo) Employees(ctx context.Context) ([]aiprovider.EmployeeBrief, error) {
+	rows, err := r.db.sql.QueryContext(ctx, `
+		SELECT e.id, COALESCE(e.code,''), e.name, COALESCE(d.name,''),
+		       COALESCE(e.leave_date,'')
+		  FROM employee e
+		  LEFT JOIN department d ON d.id = e.dept_id
+		 ORDER BY e.id`)
+	if err != nil {
+		return nil, translateErr(err)
+	}
+	defer rows.Close()
+	var out []aiprovider.EmployeeBrief
+	for rows.Next() {
+		var e aiprovider.EmployeeBrief
+		var leaveDate string
+		if err := rows.Scan(&e.ID, &e.Code, &e.Name, &e.DeptName, &leaveDate); err != nil {
+			return nil, translateErr(err)
+		}
+		e.Left = strings.TrimSpace(leaveDate) != ""
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func contactKindLabel(kind string) string {
 	switch kind {
 	case "customer":

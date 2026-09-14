@@ -74,6 +74,21 @@ type AccountantQuestion struct {
 	MultiSelect bool `json:"multiSelect"`
 }
 
+// AuxProposalView 是「建议新建一条辅助核算档案」。
+type AuxProposalView struct {
+	// Kind 是 department | employee。
+	Kind string `json:"kind"`
+	// KindLabel 是中文名。
+	KindLabel string `json:"kindLabel"`
+	// Name / Code 是拟建的名称与编码。
+	Name string `json:"name"`
+	Code string `json:"code"`
+	// DeptID 是员工所属部门（仅 employee）。
+	DeptID *int64 `json:"deptId"`
+	// Reason 是为什么要建 —— 显示给用户，也进审计。
+	Reason string `json:"reason"`
+}
+
 // AccountantTurn 是对话里的一条消息。
 type AccountantTurn struct {
 	// Role 是 user（用户说的）或 accountant（会计说的）。
@@ -82,6 +97,11 @@ type AccountantTurn struct {
 	Text string `json:"text"`
 	// Question 非空表示这一条是**在问用户**。
 	Question *AccountantQuestion `json:"question,omitempty"`
+	// Aux 非空表示这一条是**提议新建档案**（部门 / 员工），等用户确认。
+	//
+	// ★ 由界面去调建档的绑定，模型全程没有写库能力 ——
+	// 与「AI 产物一律先是草稿」是同一条边界。
+	Aux *AuxProposalView `json:"aux,omitempty"`
 	// Voucher 非空表示这一条给出了凭证草稿。
 	Voucher *VoucherDraft `json:"voucher,omitempty"`
 	// Failures / Warnings 是护栏结论，界面要摊开展示。
@@ -226,7 +246,15 @@ func (s *Service) AccountantSend(ctx context.Context, in AccountantSendInput) (*
 			aiprovider.AskUserTool(),
 			aiprovider.SearchAccountsTool(s.db.AI()),
 			aiprovider.SearchContactsTool(s.db.AI()),
+			// ★ 这两个是补上来的。原来只有科目 / 往来单位 / 历史，
+			// 于是遇到「560204 要求部门辅助核算」时，模型既查不到
+			// 有哪些部门，也没法带着真实选项问用户，只能空着交差 ——
+			// 用户看到的就是「缺少必需的辅助核算」。
+			aiprovider.SearchDepartmentsTool(s.db.AI()),
+			aiprovider.SearchEmployeesTool(s.db.AI()),
 			aiprovider.FindSimilarVouchersTool(s.db.AI()),
+			// 账套里确实没有时，提议新建（由用户确认，模型不能自己建）
+			aiprovider.ProposeNewAuxTool(),
 		),
 		Options: aiprovider.AgentOptions{
 			MaxRounds: 4, MaxTokens: 2048, Temperature: 0,
@@ -260,6 +288,28 @@ func (s *Service) AccountantSend(ctx context.Context, in AccountantSendInput) (*
 				Question:    reply.Question.Question,
 				Options:     toServiceOptions(reply.Question.Options),
 				MultiSelect: reply.Question.MultiSelect,
+			},
+			Model: reply.Model, TokensIn: reply.TokensIn, TokensOut: reply.TokensOut,
+			At: time.Now().Format(time.RFC3339),
+		})
+		accountantSessions.touch(st)
+		return &st.view, nil
+	}
+
+	// 3b. 提议新建档案：同样停下来等用户确认
+	if reply.Aux != nil {
+		st.pending = nil
+		st.view.Turns = append(st.view.Turns, AccountantTurn{
+			Role: "accountant",
+			Text: fmt.Sprintf("账套里还没有「%s」，需要先建一个：%s",
+				reply.Aux.Name, reply.Aux.Reason),
+			Aux: &AuxProposalView{
+				Kind:      reply.Aux.Kind,
+				KindLabel: reply.Aux.Label(),
+				Name:      reply.Aux.Name,
+				Code:      reply.Aux.Code,
+				DeptID:    reply.Aux.DeptID,
+				Reason:    reply.Aux.Reason,
 			},
 			Model: reply.Model, TokensIn: reply.TokensIn, TokensOut: reply.TokensOut,
 			At: time.Now().Format(time.RFC3339),

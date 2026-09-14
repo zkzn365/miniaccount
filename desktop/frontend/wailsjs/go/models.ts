@@ -2176,10 +2176,33 @@ export namespace service {
 		    return a;
 		}
 	}
+	export class AuxProposalView {
+	    kind: string;
+	    kindLabel: string;
+	    name: string;
+	    code: string;
+	    deptId?: number;
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AuxProposalView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.kindLabel = source["kindLabel"];
+	        this.name = source["name"];
+	        this.code = source["code"];
+	        this.deptId = source["deptId"];
+	        this.reason = source["reason"];
+	    }
+	}
 	export class AccountantTurn {
 	    role: string;
 	    text: string;
 	    question?: AccountantQuestion;
+	    aux?: AuxProposalView;
 	    voucher?: VoucherDraft;
 	    failures?: string[];
 	    warnings?: string[];
@@ -2199,6 +2222,7 @@ export namespace service {
 	        this.role = source["role"];
 	        this.text = source["text"];
 	        this.question = this.convertValues(source["question"], AccountantQuestion);
+	        this.aux = this.convertValues(source["aux"], AuxProposalView);
 	        this.voucher = this.convertValues(source["voucher"], VoucherDraft);
 	        this.failures = source["failures"];
 	        this.warnings = source["warnings"];
@@ -2810,6 +2834,7 @@ export namespace service {
 	        this.bookOnly = source["bookOnly"];
 	    }
 	}
+	
 	export class BankFlowView {
 	    id: number;
 	    date: string;

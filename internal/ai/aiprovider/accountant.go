@@ -150,6 +150,10 @@ type AccountantReply struct {
 	Say string
 	// Question 非空表示会计在等用户回答。
 	Question *AccountantQuestion
+	// Aux 非空表示会计提议新建一条档案（部门 / 员工），等用户确认。
+	//
+	// 与 Question 一样是**终止型**：它调用 propose_new_aux 就结束这一轮。
+	Aux *AuxProposal
 	// Proposal 非空表示会计给出了凭证提议（**尚未过护栏**）。
 	Proposal *ai.Proposal
 	// Raw 是模型返回的原始内容，进审计表。
@@ -218,6 +222,15 @@ func (a *Accountant) Reply(ctx context.Context, history []Message) (*AccountantR
 	reply.TokensIn, reply.TokensOut = res.TokensIn, res.TokensOut
 
 	if res.Asked != nil {
+		if res.Asked.Name == "propose_new_aux" {
+			p, perr := ParseAuxProposal(res.Asked.Args)
+			if perr != nil {
+				return reply, out, fmt.Errorf("ai: 解析档案提议失败（%w）：%s",
+					perr, res.Asked.Args)
+			}
+			reply.Aux = p
+			return reply, out, nil
+		}
 		q, qerr := ParseQuestion(res.Asked.Args)
 		if qerr != nil {
 			// 问题本身没解析出来：当成一次失败，但要带上原始参数，

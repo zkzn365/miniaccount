@@ -99,6 +99,39 @@ async function pick(opt) {
   await send(label, [opt.label])
 }
 
+/**
+ * 确认新建辅助核算档案。
+ *
+ * ★ 建档这一步由**界面**做，不是模型做的：它只能提议。
+ * 与「AI 产物一律先是草稿」是同一条边界 —— 改账套的动作必须由人按下去。
+ * 建完把结果当成一句用户消息发回去，会计接着往下记。
+ */
+async function confirmAux(turn) {
+  const a = turn.aux
+  if (!a) return
+  deciding.value = true
+  let r
+  if (a.kind === 'employee') {
+    // 字段按 Go 侧 EmployeeRequest 的真实标签来 —— 多传一个不存在的字段
+    // 会被 request_fields_test 挡下（也会被 Wails 静默忽略）
+    r = await api.saveEmployee({
+      id: 0, code: a.code || '', name: a.name,
+      deptId: a.deptId ?? null, enabled: true,
+      baseSalary: '', siBase: '', hfbBase: '', specialAdditional: '',
+      siProfile: '', hireDate: '', leaveDate: '', remark: '由 AI 会计提议新建',
+    })
+  } else {
+    r = await api.saveDepartment({
+      id: 0, code: a.code || '', name: a.name, parentId: null,
+      enabled: true, remark: '由 AI 会计提议新建',
+    })
+  }
+  deciding.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify(`已新建${a.kindLabel}「${a.name}」`, 'success')
+  await send(`（已新建${a.kindLabel}「${a.name}」，请继续）`)
+}
+
 async function reset() {
   if (turns.value.length && !confirm('清空这段对话？已经生成的凭证草稿不受影响。')) return
   const r = await api.accountantReset(session.value?.id ?? '')
@@ -265,6 +298,26 @@ const EXAMPLES = [
                   </button>
                 </div>
                 <p v-else class="text-xs text-muted-foreground">在下面直接回答就行</p>
+              </div>
+
+              <!-- 提议新建档案 -->
+              <div v-if="t.aux" class="ml-6 rounded-lg border border-primary/40 bg-primary/5 p-3">
+                <p class="text-sm font-medium">
+                  建议新建{{ t.aux.kindLabel }}「{{ t.aux.name }}」
+                </p>
+                <p class="mt-1 text-xs text-muted-foreground">{{ t.aux.reason }}</p>
+                <div class="mt-2 flex items-center gap-2">
+                  <Button size="sm" :disabled="deciding || busy" @click="confirmAux(t)">
+                    <Check class="size-3.5" /> 新建并继续
+                  </Button>
+                  <Button size="sm" variant="ghost" :disabled="deciding || busy"
+                          @click="send('（先不建，换一种记法）')">
+                    先不建
+                  </Button>
+                  <span class="text-xs text-muted-foreground">
+                    建完会回到对话，接着记这笔
+                  </span>
+                </div>
               </div>
 
               <!-- 凭证草稿 -->
