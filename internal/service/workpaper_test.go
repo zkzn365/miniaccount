@@ -2,9 +2,11 @@ package service_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	"miniaccount/internal/domain/money"
 	"miniaccount/internal/domain/period"
 	"miniaccount/internal/service"
 )
@@ -681,5 +683,59 @@ func TestAdjustmentRejectsDuplicateCode(t *testing.T) {
 		t.Fatal("手填一个已有的编号应当被拦下")
 	} else if !strings.Contains(err.Error(), "已经被另一笔调整用了") {
 		t.Errorf("报错要说清是重号：%v", err)
+	}
+}
+
+// ★ 重要性基准的三个口径必须一致（都是「年初至本期累计」，资产取期末）。
+//
+// 发布前审计实测：原来营业收入与费用取**本期（当月）**发生额，
+// 而资产取期末余额 —— 年度审计（期间选 12 月）时营业收入只剩 12 月一个月，
+// 门槛会算小一个数量级。
+func TestBenchmarksUseYearToDate(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t, 12)
+	// 1 月与 3 月各做一笔销售，收入分别 300,000 与 700,000
+	for _, m := range []int{1, 3} {
+		date := fmt.Sprintf("2025-%02d-28", m)
+		amount := int64(300_000)
+		if m == 3 {
+			amount = 700_000
+		}
+		mustPost(t, svc, date, "销售",
+			service.VoucherLineInput{AccountCode: "1122", Summary: "销售",
+				Debit: money100(amount), ContactID: wpPtr(mustContact(t, svc, "customer", "甲公司"))},
+			service.VoucherLineInput{AccountCode: "5001", Summary: "销售", Credit: money100(amount)})
+	}
+
+	v, err := svc.Workpaper(ctx, period.NewKey(2025, 3))
+	if err != nil {
+		t.Fatalf("读底稿失败: %v", err)
+	}
+	var revenue money.Money
+	for _, b := range v.Benchmarks {
+		if b.Value == "revenue" {
+			revenue = b.Amount
+		}
+	}
+	if revenue != money100(1_000_000) {
+		t.Errorf("★ 营业收入基准应当是**年初至本期累计** 1,000,000.00，实际 %s —— "+
+			"按当月取会算成 700,000.00，门槛跟着小一个量级", revenue)
+	}
+}
+
+// ★ 比例合法不等于门槛非零：比例太小会被舍入成 0，而 0 不是门槛。
+func TestMaterialityRejectsRoundedToZeroThresholds(t *testing.T) {
+	svc := newSvc(t, 6)
+	// 整体 500.00，实际执行比例 1ppm → 0.0005 元 → 舍入成 0
+	_, err := svc.SaveMateriality(context.Background(), service.MaterialityInput{
+		Year: 2025, Month: 3, Benchmark: "assets",
+		BenchmarkAmount: money100(500), RatePPM: 1_000,
+		PerformancePPM: 1, TrivialPPM: 1,
+	})
+	if err == nil {
+		t.Fatal("★ 实际执行重要性与明显微小都被舍入成 0 时应当被拦下 —— 门槛为零不是门槛")
+	}
+	if !strings.Contains(err.Error(), "门槛") {
+		t.Errorf("报错要讲清为什么不行：%v", err)
 	}
 }

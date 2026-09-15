@@ -412,3 +412,60 @@ func TestAccountChangesAreAudited(t *testing.T) {
 		t.Errorf("日志明细要有科目的属性：%+v", last.Detail)
 	}
 }
+
+// ★ 被审计调整用过的科目不能删。
+//
+// 发布前审计实测：调整分录存的是科目编码（不是 id），而删科目的检查
+// 只看 voucher_entry / ledger_entry / 下级，于是删掉之后审定表少一行、
+// 借贷不平 —— 而底稿上看不出任何异常。
+func TestDeleteAccountBlockedByAuditAdjustment(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t, 6)
+	dept := mustDepartment(t, svc, "生产部")
+
+	// 建一个只被审计调整用到的科目
+	if _, err := svc.SaveAccount(ctx, service.AccountInput{
+		Code: "560299", Name: "管理费用—审计专用", ParentCode: "5602",
+		RootType: "expense", BalanceDir: "debit", AuxTypes: []string{"dept"},
+	}); err != nil {
+		t.Fatalf("新建科目失败: %v", err)
+	}
+	if _, err := svc.SaveAdjustment(ctx, service.AdjustmentInput{
+		Year: 2025, Month: 3, Kind: "adjust",
+		Summary: "通过新科目调整", Reason: "测试用",
+		Lines: []service.AdjustLineInput{
+			{AccountCode: "560299", Summary: "调整", Debit: money100(1_000), DeptID: &dept},
+			{AccountCode: "1602", Summary: "调整", Credit: money100(1_000)},
+		},
+	}); err != nil {
+		t.Fatalf("登记调整失败: %v", err)
+	}
+
+	if err := svc.DeleteAccount(ctx, "560299"); err == nil {
+		t.Fatal("★ 被审计调整引用的科目不该能删 —— 删了审定表会缺一行、借贷不平")
+	} else if !strings.Contains(err.Error(), "审计底稿") {
+		t.Errorf("报错要说清被底稿引用着：%v", err)
+	}
+
+	// 科目管理页上也要能看出它不能删（按钮置灰 + 说明）
+	tree, err := svc.Accounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, row := range tree.Rows {
+		if row.Code != "560299" {
+			continue
+		}
+		found = true
+		if row.CanDelete {
+			t.Error("★ 被底稿引用的科目在列表上不该显示为「可删除」")
+		}
+		if !strings.Contains(row.Reason, "审计底稿") {
+			t.Errorf("要给出原因：%q", row.Reason)
+		}
+	}
+	if !found {
+		t.Fatal("科目列表里没有 560299")
+	}
+}

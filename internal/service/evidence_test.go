@@ -552,3 +552,78 @@ func TestDeleteMaterialityClearsItsEvidence(t *testing.T) {
 		}
 	}
 }
+
+// ★ 只挂在证据链上的附件不能被「孤儿附件清理」当成孤儿。
+//
+// 发布前审计实测：孤儿比对只看 attachment 表，而审计证据的原件
+// 记在 audit_evidence.sha256 上 —— 底稿上那份「折旧计算表」会被
+// 列成孤儿文件，而界面旁边写着「请自行确认后再清理 .files 目录」。
+// 用户照着做，底稿的全部依据就变成「原件已丢失」。
+func TestEvidenceAttachmentIsNotOrphan(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t, 6)
+	dept := mustDepartment(t, svc, "生产部")
+	seedMateriality(t, svc, 2025, 3)
+	id, _ := addAdjustment(t, svc, depAdjustmentInput(t, svc, 2025, 3, dept, 3000))
+
+	if _, err := svc.AddEvidence(ctx, service.EvidenceInput{
+		OwnerType: "adjustment", OwnerID: id, RefKind: "attachment",
+		FileName: "折旧计算表.csv", Data: []byte("a,b\n1,2\n"), By: "李审计",
+	}); err != nil {
+		t.Fatalf("上传附件失败: %v", err)
+	}
+
+	orphans, err := svc.OrphanAttachments(ctx)
+	if err != nil {
+		t.Fatalf("查孤儿附件失败: %v", err)
+	}
+	if len(orphans) != 0 {
+		t.Errorf("★ 证据链上的原件被当成了孤儿文件（用户会照提示删掉它）：%+v", orphans)
+	}
+}
+
+// ★ 删掉草稿凭证时，它的附件关联也要一起清掉。
+//
+// 不清的话：关联指向一张不存在的凭证，而物理文件永远进不了孤儿列表
+// （被认为还有人引用），磁盘空间再也回收不了。
+func TestDeleteDraftVoucherClearsAttachments(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t, 6)
+	dept := mustDepartment(t, svc, "生产部")
+	d, err := svc.SaveVoucher(ctx, service.VoucherInput{
+		Word: "记", Date: "2025-03-31", Remark: "待删草稿", CreatedBy: "李会计",
+		Lines: []service.VoucherLineInput{
+			{AccountCode: "560205", Summary: "费用", Debit: money100(100), DeptID: &dept},
+			{AccountCode: "1001", Summary: "现金", Credit: money100(100)},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AttachToVoucher(ctx, d.ID, "发票.pdf", []byte("fake pdf")); err != nil {
+		t.Fatalf("挂附件失败: %v", err)
+	}
+	if err := svc.DeleteVoucher(ctx, d.ID); err != nil {
+		t.Fatalf("删除草稿失败: %v", err)
+	}
+
+	// ★ 查完必须**立刻关掉**再调下一个服务方法：连接池只有一条连接，
+	// 结果集没读完/没关闭时再发查询会一直等下去（表现为测试卡死）。
+	var attached int
+	if err := svc.DB().SQL().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM attachment WHERE owner_type='voucher' AND owner_id = ?`,
+		d.ID).Scan(&attached); err != nil {
+		t.Fatal(err)
+	}
+	if attached != 0 {
+		t.Errorf("★ 凭证删了还留着 %d 条附件关联 —— 那份文件的磁盘空间再也回收不了", attached)
+	}
+	// 文件实体本身不删（可能被别的单据共享），所以现在它应当是个孤儿
+	orphans, err := svc.OrphanAttachments(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orphans) != 1 {
+		t.Errorf("凭证删掉之后文件应当成为可回收的孤儿，实际 %d 个", len(orphans))
+	}
+}

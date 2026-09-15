@@ -445,3 +445,81 @@ func TestTaxFilingPendingOnlyEndedPeriods(t *testing.T) {
 		t.Errorf("已过完的 2025-03 增值税应当提醒，实际待申报：%+v", v.Pending)
 	}
 }
+
+// ★ 用户手工填的 0（零申报）不能被「按当前计算表填」悄悄改写。
+//
+// 发布前界面审计实测：服务层按「四个金额都是 0」推断「没填」，
+// 于是手工清成 0 的零申报会被当前计算表覆盖 —— 台账记的是
+// 「发生过的事实」，不能被派生数字改写。
+func TestTaxFilingManualZeroIsKept(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t, 6)
+	seedVATPeriod(t, svc) // 本期计算表算出来是 7,280
+
+	v, err := svc.SaveTaxFiling(ctx, service.TaxFilingInput{
+		Kind: "vat", Year: 2025, Month: 3, Status: "filed",
+		FiledDate: "2025-04-15", Operator: "李会计",
+		// 用户明确手工填 0（零申报）
+		ManualAmounts: true,
+	})
+	if err != nil {
+		t.Fatalf("登记失败: %v", err)
+	}
+	item := v.Items[0]
+	if !item.Payable.IsZero() {
+		t.Errorf("★ 手工填的 0 被改写成 %s —— 台账不能替用户改数", item.Payable)
+	}
+	// 从计算表带出来时（ManualAmounts=false 且没填）才允许覆盖
+	v2, err := svc.SaveTaxFiling(ctx, service.TaxFilingInput{
+		Kind: "iit", Year: 2025, Month: 3, Status: "filed",
+		FiledDate: "2025-04-15", Operator: "李会计",
+		FromCurrent: true,
+	})
+	if err != nil {
+		t.Fatalf("按计算表登记失败: %v", err)
+	}
+	for _, it := range v2.Items {
+		if it.Kind == "iit" && it.Payable.IsZero() && it.Computed.IsZero() {
+			// 没有工资单时两边都是 0，这条只是确认不会报错
+			continue
+		}
+	}
+}
+
+// ★ 同一属期的申报记录，属期本身不能改（界面在全年列表上点「改」）。
+//
+// 发布前审计实测：原来拿**入参**的属期去校验申报日期，
+// 于是在列表里改 1 月的记录会被报「申报日期早于 6 月月末」——
+// 明明没错却不让人改。
+func TestTaxFilingEditUsesRecordOwnPeriod(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t, 6)
+	// 1 月的申报（申报日期 2 月）
+	v, err := svc.SaveTaxFiling(ctx, service.TaxFilingInput{
+		Kind: "vat", Year: 2025, Month: 1, Status: "filed",
+		FiledDate: "2025-02-15", Operator: "李会计",
+	})
+	if err != nil {
+		t.Fatalf("登记失败: %v", err)
+	}
+	id := v.Items[0].ID
+
+	// 照记录**自己的**属期回传（界面现在就是这么做的）：应当成功
+	if _, err := svc.SaveTaxFiling(ctx, service.TaxFilingInput{
+		ID: id, Kind: "vat", Year: 2025, Month: 1, Status: "paid",
+		FiledDate: "2025-02-15", PaidDate: "2025-02-20",
+		ReceiptNo: "R-9", Operator: "李会计",
+	}); err != nil {
+		t.Fatalf("照记录自己的属期改应当成功：%v", err)
+	}
+
+	// 传一个别的属期：必须明确拒绝「属期不能改」
+	if _, err := svc.SaveTaxFiling(ctx, service.TaxFilingInput{
+		ID: id, Kind: "vat", Year: 2025, Month: 6, Status: "paid",
+		FiledDate: "2025-02-15", Operator: "李会计",
+	}); err == nil {
+		t.Fatal("改属期应当被拒绝")
+	} else if !strings.Contains(err.Error(), "不能改成") {
+		t.Errorf("要讲清属期不能改：%v", err)
+	}
+}

@@ -183,6 +183,9 @@ func deleteBlockers(a *account.Account, u sqlite.AccountUsage) (bool, string) {
 		return false, fmt.Sprintf("还有 %d 个下级科目，先处理下级", u.Children)
 	case u.Entries > 0:
 		return false, fmt.Sprintf("已被 %d 条分录引用过，删除会让历史凭证对不上科目", u.Entries)
+	case u.AuditLines > 0:
+		return false, fmt.Sprintf("审计底稿里有 %d 条调整分录用了它 —— "+
+			"删掉之后审定表会缺一行、借贷不平，而底稿上看不出异常", u.AuditLines)
 	case u.Balance != 0:
 		return false, "还有余额，先把余额结平"
 	}

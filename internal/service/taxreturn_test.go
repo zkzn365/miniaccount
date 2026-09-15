@@ -532,3 +532,42 @@ func TestTaxReturnVATNegativeColumnIsNotAbsolute(t *testing.T) {
 		t.Errorf("专栏净额为负必须报出来，实际警告：%v", v.Warnings)
 	}
 }
+
+// ★ 附加税费减半：小规模纳税人**或**小型微利企业都适用。
+//
+// 发布前审计实测：原来只按「小规模」判，一般纳税人里的小型微利企业
+// 会多算附加税费（依据：财税〔2019〕13号，2022 年第 10 号把范围扩到
+// 小型微利企业与个体工商户）。
+func TestTaxReturnVATSurrogateHalvedForSmallLowProfit(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t, 6)
+	// 身份是一般纳税人（默认），但企业规模填「微型」→ 属于小微企业范围
+	if err := svc.SetEnterpriseScale(ctx, "micro"); err != nil {
+		t.Fatalf("设置企业规模失败: %v", err)
+	}
+	mustPost(t, svc, "2025-03-31", "销售",
+		service.VoucherLineInput{AccountCode: "1122", Summary: "销售", Debit: money100(113_000),
+			ContactID: wpPtr(mustContact(t, svc, "customer", "甲公司"))},
+		service.VoucherLineInput{AccountCode: "5001", Summary: "销售", Credit: money100(100_000)},
+		service.VoucherLineInput{AccountCode: "22210102", Summary: "销项税额", Credit: money100(13_000)})
+	mustPost(t, svc, "2025-03-31", "采购",
+		service.VoucherLineInput{AccountCode: "1403", Summary: "采购", Debit: money100(50_000)},
+		service.VoucherLineInput{AccountCode: "22210101", Summary: "进项税额", Debit: money100(6_500)},
+		service.VoucherLineInput{AccountCode: "2202", Summary: "采购", Credit: money100(56_500),
+			ContactID: wpPtr(mustContact(t, svc, "supplier", "乙公司"))})
+
+	v := taxReturn(t, svc, "vat", 2025, 3, service.TaxReturnInput{})
+	// 应纳税额 6,500；减半后附加 6% = 390
+	if got := keyAmount(t, v, "附加税费（合计 6%）"); got != int64(money100(390)) {
+		t.Errorf("★ 小型微利企业的附加税费应当减半（6%% → 390.00），实际 %d", got)
+	}
+	found := false
+	for _, id := range v.Identities {
+		if strings.Contains(id.Value, "小型微利企业减半") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("表上要写明减半的依据，实际身份项：%+v", v.Identities)
+	}
+}

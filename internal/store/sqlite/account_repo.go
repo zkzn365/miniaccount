@@ -438,17 +438,26 @@ type AccountUsage struct {
 	Balance money.Money `json:"balance"`
 	// Children 是下级科目数。
 	Children int `json:"children"`
+	// AuditLines 是审计调整分录里引用这个科目的行数。
+	AuditLines int `json:"auditLines"`
 }
 
 // UsageOf 查单个科目的使用情况。
+//
+// ★ AuditLines 是**审计调整的分录行数**，按科目编码统计（调整分录存的是
+// code 而不是 id）。漏掉这一项会让「删科目」在底稿上留下一个洞：
+// 调整分录还在、科目的余额表行没了，审定表静默少一行、借贷不平 ——
+// 而底稿上看不出任何异常（发布前审计实测）。
 func (r *AccountRepo) UsageOf(ctx context.Context, id int64) (AccountUsage, error) {
 	var u AccountUsage
 	err := r.db.sql.QueryRowContext(ctx, `
 		SELECT
 		  (SELECT COUNT(*) FROM voucher_entry WHERE account_id = ?),
 		  (SELECT COALESCE(SUM(debit - credit), 0) FROM ledger_entry WHERE account_id = ?),
-		  (SELECT COUNT(*) FROM account WHERE parent_id = ?)`,
-		id, id, id).Scan(&u.Entries, &u.Balance, &u.Children)
+		  (SELECT COUNT(*) FROM account WHERE parent_id = ?),
+		  (SELECT COUNT(*) FROM audit_adjustment_line
+		    WHERE account_code = (SELECT code FROM account WHERE id = ?))`,
+		id, id, id, id).Scan(&u.Entries, &u.Balance, &u.Children, &u.AuditLines)
 	if err != nil {
 		return u, translateErr(err)
 	}
@@ -524,7 +533,53 @@ func (r *AccountRepo) Usage(ctx context.Context) (map[int64]AccountUsage, error)
 		u.Children = n
 		out[id] = u
 	}
-	return out, rows2.Err()
+	if err := rows2.Err(); err != nil {
+		return nil, err
+	}
+
+	// 审计调整分录的引用（按科目编码）：科目管理页也要能看出
+	// 哪些科目被底稿用着，否则删除按钮是亮的，点下去才发现删不掉。
+	rows3, err := r.db.sql.QueryContext(ctx,
+		`SELECT account_code, COUNT(*) FROM audit_adjustment_line GROUP BY account_code`)
+	if err != nil {
+		return nil, translateErr(err)
+	}
+	defer rows3.Close()
+	byCode := map[string]int{}
+	for rows3.Next() {
+		var code string
+		var n int
+		if err := rows3.Scan(&code, &n); err != nil {
+			return nil, err
+		}
+		byCode[code] = n
+	}
+	if err := rows3.Err(); err != nil {
+		return nil, err
+	}
+	if len(byCode) > 0 {
+		rows4, err := r.db.sql.QueryContext(ctx, `SELECT id, code FROM account`)
+		if err != nil {
+			return nil, translateErr(err)
+		}
+		defer rows4.Close()
+		for rows4.Next() {
+			var id int64
+			var code string
+			if err := rows4.Scan(&id, &code); err != nil {
+				return nil, err
+			}
+			if n := byCode[code]; n > 0 {
+				u := out[id]
+				u.AuditLines = n
+				out[id] = u
+			}
+		}
+		if err := rows4.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // SetLeaf 改「明细/汇总」属性（在明细科目下加子科目时，父科目要变成汇总）。
