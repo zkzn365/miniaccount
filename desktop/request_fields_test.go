@@ -46,10 +46,20 @@ func TestFrontendRequestFieldsExist(t *testing.T) {
 		t.Fatal("api.js 里没有解析到任何 api 方法 → 绑定映射 —— 文件格式可能变了")
 	}
 
+	// ★ views 与 components 都要扫。
+	//
+	// 原来只扫 views/*.vue，而 EvidenceChain.vue（调 addEvidence /
+	// deleteEvidence）住在 components 下，完全没被比对 ——
+	// 防线恰好空在最容易写错的那一处。
 	views, err := filepath.Glob("frontend/src/views/*.vue")
 	if err != nil {
 		t.Fatal(err)
 	}
+	comps, err := filepath.Glob("frontend/src/components/*.vue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	views = append(views, comps...)
 
 	var problems []string
 	checked := 0

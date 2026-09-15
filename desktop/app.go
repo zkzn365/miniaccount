@@ -171,6 +171,21 @@ func classify(err error) *Fault {
 		errors.Is(err, period.ErrInvalidYearMonth):
 		return &Fault{Kind: FaultInvalid, Message: err.Error()}
 
+	// 数据库层的约束冲突：**这是「你的数据有问题」，不是程序坏了**。
+	//
+	// 归到 FaultInvalid 而不是 FaultInternal，界面才会按「可以改」展示。
+	// 唯一约束最常见的来源是「同一件事登记了两次」——所以把话说到点子上。
+	case errors.Is(err, sqlite.ErrConflict):
+		return &Fault{Kind: FaultInvalid, Message: "这条记录与已有的重复了：" +
+			strings.TrimPrefix(err.Error(), "sqlite: ") +
+			"\n（同一件事只需要登记一次；若是更正，请先作废原记录再登记新的）"}
+
+	case errors.Is(err, sqlite.ErrCheckFail),
+		errors.Is(err, sqlite.ErrForeignKey):
+		return &Fault{Kind: FaultInvalid, Message: "数据不符合约束：" +
+			strings.TrimPrefix(err.Error(), "sqlite: ") +
+			"\n请检查填的内容，或先补齐被引用的那条记录"}
+
 	// 凭证本身的填写错误。
 	//
 	// ★ 这一类必须归到「输入不合法」而不是「内部错误」：

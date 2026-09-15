@@ -249,6 +249,10 @@ export const api = {
   removeAttachment: (req) => call(A().RemoveAttachment, req),
   orphanAttachments: () => call(A().OrphanAttachments),
   attachmentPath: (hash) => call(A().AttachmentPath, hash),
+  // 用系统默认程序打开一份附件。
+  // ★ 传的是 hash 而不是路径：路径能指向任何文件，hash 只能指向
+  // 账套 .files 里已有的那份（见 desktop/voucher.go 的说明）。
+  openAttachment: (hash) => call(A().OpenAttachment, hash),
 
   // 发票
   invoices: (req) => call(A().Invoices, req),
@@ -302,6 +306,33 @@ export const api = {
   // 计提预览（不写库）与计提（生成草稿凭证，过账在账期结算）
   previewAccrual: (req) => call(A().PreviewAccrual, req),
   accrue: (req) => call(A().Accrue, req),
+  // 审计底稿：重要性水平、审定表、未更正错报、审计调整。
+  // 金额传字符串元（"3000.00"）；比例传百万分比整数（5000 = 0.5%）。
+  // postAdjustment 只生成**草稿**凭证 —— 过账仍在账期结算。
+  workpaper: (req) => call(A().Workpaper, req),
+  saveMateriality: (req) => call(A().SaveMateriality, req),
+  deleteMateriality: (req) => call(A().DeleteMateriality, req),
+  saveAdjustment: (req) => call(A().SaveAdjustment, req),
+  deleteAdjustment: (id) => call(A().DeleteAdjustment, id),
+  postAdjustment: (req) => call(A().PostAdjustment, req),
+  // 审计证据链：每条结论的依据（附件 / 凭证 / 发票 / 纸质资料…）
+  evidence: (req) => call(A().Evidence, req),
+  evidenceKinds: () => call(A().EvidenceKinds),
+  addEvidence: (req) => call(A().AddEvidence, req),
+  deleteEvidence: (req) => call(A().DeleteEvidence, req),
+  // 税务计算表（只读；不替代申报表）。金额传字符串元。
+  taxReturn: (req) => call(A().TaxReturn, req),
+  taxReturnKinds: () => call(A().TaxReturnKinds),
+  // 税务申报台账：这一期报没报、什么时候报的、报了多少、谁办的。
+  taxFilings: (year) => call(A().TaxFilings, year),
+  saveTaxFiling: (req) => call(A().SaveTaxFiling, req),
+  voidTaxFiling: (req) => call(A().VoidTaxFiling, req),
+  taxFilingKinds: () => call(A().TaxFilingKinds),
+  // 审计与鉴证文书草稿：审计报告 / 验资报告 / 管理建议书。
+  auditDoc: (req) => call(A().AuditDoc, req),
+  auditDocKinds: () => call(A().AuditDocKinds),
+  auditOpinions: () => call(A().AuditOpinions),
+  shareholderPaid: (req) => call(A().ShareholderPaid, req),
   // 往来单位档案（辅助核算：客户 / 供应商 / 股东 / 其他单位）。
   // ★ 与 contactOptions 的区别：这个**包含已停用的**，是给管理界面用的；
   // 那个只列启用中的，是给凭证录入的下拉用的。用同一个的话，
@@ -438,6 +469,181 @@ export const DRAFT_HINT =
 
 // 导出给测试用：假实现必须与真实现遵守同一份契约，
 // 所以它需要被测试盯着（frontend/test/api.test.mjs）。
+export 
+// ---------------------------------------------------------------------------
+// 审计 / 税务相关假数据
+//
+// ★ 形状必须与 Go 返回的**完全一致**：mock 少一个字段，开发态（vite dev
+// 没有 Wails 时）的表现就与真实运行不同，而这类差异在界面上表现为
+// 「某个数字不见了」，很难往契约不一致上想。
+// 写接口也要返回完整对象（不是 {}）：组件拿返回值直接刷新界面。
+// ---------------------------------------------------------------------------
+
+function mockWorkpaper() {
+  return {
+    period: '2025-03',
+    materiality: {
+      benchmark: 'assets', benchmarkName: '资产总额',
+      benchmarkAmount: 1000000000, ratePpm: 5000, rateLabel: '0.5%',
+      performancePpm: 600000, performanceLabel: '60%',
+      trivialPpm: 50000, trivialLabel: '5%',
+      overall: 5000000, performance: 3000000, trivial: 250000,
+      note: '小型企业，以资产总额为基准',
+      explain: ['基准：资产总额 10,000,000.00',
+        '整体重要性 = 10,000,000.00 × 0.5% = 50,000.00',
+        '实际执行重要性 = 50,000.00 × 60% = 30,000.00',
+        '明显微小错报临界值 = 50,000.00 × 5% = 2,500.00'],
+    },
+    benchmarks: [
+      { value: 'assets', label: '资产总额', amount: 1000000000, defaultRatePpm: 5000, defaultRateLabel: '0.5%', usable: true },
+      { value: 'revenue', label: '营业收入', amount: 300000000, defaultRatePpm: 10000, defaultRateLabel: '1%', usable: true },
+      { value: 'profit', label: '利润总额', amount: 20000000, defaultRatePpm: 50000, defaultRateLabel: '5%', usable: true },
+      { value: 'expense', label: '费用总额', amount: 0, defaultRatePpm: 10000, defaultRateLabel: '1%', usable: false },
+    ],
+    worksheet: [
+      { accountCode: '1602', accountName: '累计折旧', bookBalance: -100000, adjustDebit: 0, adjustCredit: 300000, audited: -400000, adjusted: true, trivial: false },
+      { accountCode: '560205', accountName: '管理费用—折旧费', bookBalance: 100000, adjustDebit: 300000, adjustCredit: 0, audited: 400000, adjusted: true, trivial: false },
+    ],
+    misstatements: {
+      items: [{ code: 'ADJ-202503-001', summary: '补提 2025 年折旧', kind: 'adjust', kindLabel: '调整', amount: 300000, reason: '折旧计算表显示少提 3,000.00', trivial: false }],
+      total: 300000, overall: 5000000, performance: 3000000, trivial: 250000,
+      hasMateriality: true, reclassCount: 0, trivialCount: 0,
+      concludes: '未更正错报合计 3,000.00，低于实际执行重要性 30,000.00，尚未构成重大错报。',
+    },
+    adjustments: [{
+      id: 1, code: 'ADJ-202503-001', kind: 'adjust', kindLabel: '调整',
+      summary: '补提 2025 年折旧', reason: '折旧计算表显示少提 3,000.00',
+      evidence: '折旧计算表（底稿索引 F-3）', amount: 300000, balanced: true,
+      booked: false, posted: false, voucherId: null,
+      stateLabel: '未入账（仅登记在底稿）', voucherLabel: '',
+      lines: [
+        { lineNo: 1, accountCode: '560205', accountName: '管理费用—折旧费', summary: '补提折旧', debit: 300000, credit: 0, auxDesc: '生产部', contactId: null, employeeId: null, deptId: 1, projectId: null },
+        { lineNo: 2, accountCode: '1602', accountName: '累计折旧', summary: '补提折旧', debit: 0, credit: 300000, auxDesc: '', contactId: null, employeeId: null, deptId: null, projectId: null },
+      ],
+      createdBy: '李审计', reviewedBy: '', problems: null,
+    }],
+  }
+}
+
+function mockEvidence() {
+  return {
+    period: '2025-03', unsupported: 1, broken: 0,
+    concludes: '2 项结论的依据都齐，另有 1 项还没有附依据。',
+    nextActions: ['有 1 项结论还没有依据：在下面每条结论后面点「附上资料」'],
+    chains: [
+      { ownerType: 'materiality', ownerTypeLabel: '重要性水平', ownerId: 202503,
+        title: '重要性水平：资产总额 10,000,000.00 × 0.5% = 50,000.00',
+        linkTo: 'workpaper', total: 1, files: 0, documents: 1,
+        concludes: '依据齐全：1 份（附件 0、单据 1）。',
+        links: [{ id: 1, refKind: 'external', refKindLabel: '外部资料',
+          refId: 0, refLabel: '上年审计报告（资产总额 1,200 万）',
+          note: '按上年资产总额的 0.5% 确定', hash: '', fileName: '', fileSize: 0,
+          hasFile: false, missing: false, path: '', linkedBy: '李审计', linkedAt: '' }] },
+      { ownerType: 'adjustment', ownerTypeLabel: '审计调整', ownerId: 1,
+        title: 'ADJ-202503-001 补提 2025 年折旧 3,000.00',
+        linkTo: 'adjustment/1', total: 1, files: 1, documents: 0,
+        concludes: '依据齐全：1 份（附件 1、单据 0）。',
+        links: [{ id: 2, refKind: 'attachment', refKindLabel: '附件',
+          refId: 0, refLabel: '折旧计算表.xlsx', note: '少提 3,000.00',
+          hash: 'a'.repeat(64), fileName: '折旧计算表.xlsx', fileSize: 20480,
+          hasFile: true, missing: false, path: '/Users/you/.mini-account/dataDB/.files/aa/aa.pdf',
+          linkedBy: '李审计', linkedAt: '' }] },
+      { ownerType: 'conclusion', ownerTypeLabel: '底稿结论', ownerId: 202503,
+        title: '本期底稿结论：未更正错报合计 3,000.00', linkTo: 'workpaper',
+        total: 0, files: 0, documents: 0,
+        concludes: '底稿结论还没有附任何依据 —— 结论要有出处，复核人才判断得了。',
+        links: [] },
+    ],
+  }
+}
+
+function mockTaxReturn() {
+  return {
+    kind: 'vat', kindLabel: '增值税及附加', period: '2025-03',
+    title: '增值税及附加税费计算表',
+    submittable: false, draft: true,
+    payable: 728000, tax: 650000, surcharge: 78000, paid: 0,
+    filing: null,
+    filingHint: '本期还没有登记申报记录：报完之后到「申报台账」登记，台账才能回答「这期报了没」。',
+    concludes: '本期应补增值税及附加 7,280.00（其中增值税 6,500.00）。这是草稿：请到电子税务局按申报表逐行核对后再申报。',
+    policyNote: '口径：一般计税方法。附加税费比例与减半优惠是可配置的政策数据，请按纳税人所在地与实际身份核对；本表不替代申报表。',
+    warnings: [],
+    sources: ['销项税额 = 22210102 本期贷方发生额 = 13,000.00'],
+    identities: [
+      { label: '增值税纳税人身份', value: '一般纳税人', warn: false },
+      { label: '计税方法', value: '一般计税（进项可抵）', warn: false },
+      { label: '附加税费比例', value: '城建税 7% + 教育费附加 3% + 地方教育附加 2%', warn: false },
+    ],
+    inputFields: [],
+    keys: [
+      { label: '本期应纳税额（增值税）', amount: 650000, note: '= 销项合计 − 实际抵扣 − 减免税款 − 出口抵减' },
+      { label: '附加税费（合计 12%）', amount: 78000, note: '以增值税应纳税额为基数' },
+      { label: '本期应补(退)税额', amount: 728000, note: '= 应纳税额 + 附加税费 − 本期已交税金' },
+      { label: '期末留抵税额（结转下期）', amount: 0, note: '可抵进项大于销项时结转到下期' },
+    ],
+    rows: [
+      { line: '11', label: '销项税额', amount: 1300000, source: '22210102 应交增值税—销项税额 本期贷方发生额', note: '', emphasis: false },
+      { line: '14', label: '进项税额', amount: 650000, source: '22210101 应交增值税—进项税额 本期借方发生额', note: '', emphasis: false },
+      { line: '18', label: '实际抵扣税额', amount: 650000, source: 'min(本表 16 + 17, 本表 13)', note: '', emphasis: false },
+      { line: '19', label: '应纳税额（13−18）', amount: 650000, source: '本表 13 − 18', note: '', emphasis: true },
+      { line: '28', label: '本期应补(退)税额（19−20−21+26−27）', amount: 728000, source: '本表 19 − 20 − 21 + 26 − 27', note: '', emphasis: true },
+    ],
+  }
+}
+
+function mockTaxFilings() {
+  return {
+    year: 2025, effective: 1, voided: 0,
+    concludes: '本年已登记 1 条申报（其中作废 0 条），另有 2 项还没有登记。',
+    pending: [
+      { period: '2025-02', kind: 'vat', kindLabel: '增值税及附加', payable: 0,
+        hint: '本期算出来应补(退) 0.00，还没有登记申报记录；报完之后到这一页登记，台账才能回答「这期报了没」。' },
+    ],
+    items: [{
+      id: 1, year: 2025, month: 3, period: '2025-03', periodLabel: '2025-03',
+      kind: 'vat', kindLabel: '增值税及附加',
+      status: 'paid', statusLabel: '已申报并缴纳',
+      filedDate: '2025-04-15', paidDate: '2025-04-18',
+      payable: 728000, taxAmount: 650000, surcharge: 78000, paid: 0,
+      channel: '电子税务局', receiptNo: '1234567890', operator: '李会计', note: '',
+      voidedBy: '', voidedAt: '', voidReason: '',
+      computed: 728000, diff: 0,
+      reconcile: '与当前计算表一致（7,280.00）。',
+      summary: '增值税及附加 2025-03 已申报并缴纳，应补(退) 7,280.00，申报于 2025-04-15',
+    }],
+  }
+}
+
+function mockAuditDoc() {
+  return {
+    kind: 'audit', kindLabel: '审计报告', title: '审计报告',
+    company: '杭州云帆软件有限公司', period: '2025-03',
+    opinion: '', opinionStr: '未选择',
+    draft: true, submittable: false, canIssue: false,
+    signature: '本报告须由两名注册会计师签名盖章、会计师事务所盖章后生效；软件生成的是草稿，不具备证明效力。',
+    policyNote: '执业依据：《中国注册会计师审计准则》。文书中的数字均可追到账套或审计底稿。',
+    concludes: '这份审计报告还不能签发：还有 2 项要补齐（见「待补事项」）。',
+    missing: [
+      '还没有选择审计意见类型：无保留 / 保留 / 否定 / 无法表示意见，由注册会计师判断。在此之前报告正文不会写出「我们认为……」这一句。',
+      '第二名注册会计师（签字）：审计报告须两名注册会计师签名盖章 —— 只有一名不能出具',
+    ],
+    inputs: [
+      { key: 'firmName', label: '会计师事务所名称', hint: '报告抬头要写事务所全称', value: '某某会计师事务所', fromBook: false },
+      { key: 'reportNo', label: '报告文号', hint: '如「××会审字〔2025〕第 123 号」', value: '某会审字〔2025〕第 1 号', fromBook: false },
+      { key: 'cpa1', label: '注册会计师（签字）', hint: '', value: '张三', fromBook: false },
+      { key: 'cpa2', label: '第二名注册会计师（签字）', hint: '审计报告须两名注册会计师签名盖章 —— 只有一名不能出具', value: '', fromBook: false },
+      { key: 'reportDate', label: '报告日期', hint: '', value: '2026-03-31', fromBook: false },
+    ],
+    sections: [
+      { no: '一', title: '审计意见', body: '我们审计了杭州云帆软件有限公司（以下简称「贵公司」）2025-03 的财务报表……\n【意见类型待注册会计师选择】—— 软件不形成审计意见，选定之前这一稿不能用于任何用途。', source: '意见类型由注册会计师选择；报表项目与金额取自账套' },
+      { no: '二', title: '形成审计意见的基础', body: '本期重要性水平：整体重要性 50,000.00、实际执行重要性 30,000.00、明显微小错报临界值 2,500.00。', source: '重要性水平、未更正错报取自审计底稿' },
+      { no: '三', title: '管理层和治理层对财务报表的责任', body: '管理层负责按照小企业会计准则的规定编制财务报表……', source: '准则标准段落' },
+      { no: '四', title: '注册会计师对财务报表审计的责任', body: '我们的目标是对财务报表整体是否不存在由于舞弊或错误导致的重大错报获取合理保证……', source: '准则标准段落' },
+    ],
+    fullText: '【草稿 — 尚有事项待补，请勿签发】\n\n审计报告\n\n杭州云帆软件有限公司：\n2025-03\n',
+  }
+}
+
 export const mockApp = {
   CurrentBook: async () => mockBook,
   Accounts: async () => ({
@@ -714,6 +920,51 @@ export const mockApp = {
     period: '2025-02', depreciationVoucherId: 21, amortizationVoucherId: 22,
     depreciationTotal: 31667, amortizationTotal: 500000, skipped: [],
   }),
+  Workpaper: async () => mockWorkpaper(),
+  SaveMateriality: async () => mockWorkpaper(),
+  DeleteMateriality: async () => mockWorkpaper(),
+  SaveAdjustment: async () => mockWorkpaper(),
+  DeleteAdjustment: async () => mockWorkpaper(),
+  PostAdjustment: async () => mockWorkpaper(),
+  Evidence: async () => mockEvidence(),
+  AddEvidence: async () => mockEvidence(),
+  DeleteEvidence: async () => mockEvidence(),
+  EvidenceKinds: async () => [
+    { value: 'attachment', label: '附件' }, { value: 'voucher', label: '凭证' },
+    { value: 'invoice', label: '发票' }, { value: 'bank_flow', label: '银行流水' },
+    { value: 'expense', label: '报销单' }, { value: 'contract', label: '合同' },
+    { value: 'external', label: '外部资料' },
+  ],
+  TaxReturn: async () => mockTaxReturn(),
+  TaxReturnKinds: async () => [
+    { value: 'vat', label: '增值税及附加' },
+    { value: 'cit', label: '企业所得税' },
+    { value: 'iit', label: '个人所得税（工资薪金）' },
+  ],
+  TaxFilings: async () => mockTaxFilings(),
+  SaveTaxFiling: async () => mockTaxFilings(),
+  VoidTaxFiling: async () => mockTaxFilings(),
+  TaxFilingKinds: async () => [
+    { value: 'vat', label: '增值税及附加' },
+    { value: 'cit', label: '企业所得税' },
+    { value: 'iit', label: '个人所得税（工资薪金）' },
+  ],
+  AuditDoc: async () => mockAuditDoc(),
+  AuditDocKinds: async () => [
+    { value: 'audit', label: '审计报告' },
+    { value: 'capital', label: '验资报告' },
+    { value: 'management', label: '管理建议书' },
+  ],
+  AuditOpinions: async () => [
+    { value: 'unqualified', label: '无保留意见', hint: '财务报表在所有重大方面公允反映' },
+    { value: 'qualified', label: '保留意见', hint: '错报影响重大但不具有广泛性' },
+    { value: 'adverse', label: '否定意见', hint: '错报影响重大且具有广泛性' },
+    { value: 'disclaimer', label: '无法表示意见', hint: '无法获取充分适当的审计证据' },
+  ],
+  ShareholderPaid: async () => [
+    { name: '张三', paid: 60000000 }, { name: '李四', paid: 40000000 },
+  ],
+  OpenAttachment: async () => null,
   DeleteDepartment: async () => null,
   DepartmentUsageOf: async () => ({ employees: 2, children: 0, entries: 0, bankFlows: 0, bankRules: 0, invoices: 0, claims: 0 }),
   TaxTableInfo: async () => ({ name: '个人所得税预扣率表一', note: '税率与级距全部来自可配置的参数表', brackets: [
@@ -805,6 +1056,30 @@ export const mockApp = {
           options: [
             { label: '银行转账，取得增值税专用发票（推荐）', description: '可抵扣进项税，挂应付账款或直接冲银行', recommended: true },
             { label: '现金支付，只有收据', description: '无进项税可抵，全额计入管理费用', recommended: false },
+          ],
+        } },
+      // 审计依据提议：模型只能提议，落库要用户按确认
+      { role: 'accountant', text: '建议为审计调整挂一份依据：记-2025-03-0007 计提本月折旧。', at: '',
+        evidence: {
+          ownerType: 'adjustment', ownerTypeLabel: '审计调整', ownerId: 1,
+          ownerTitle: 'ADJ-202503-001 补提 2025 年折旧 3,000.00',
+          refKind: 'voucher', refKindLabel: '凭证', refId: 7,
+          refLabel: '记-2025-03-0007 计提本月折旧 1,000.00',
+          note: '这张凭证上的折旧额就是少提的那部分',
+          reason: '补提折旧的依据就在这张凭证上', problems: [],
+        } },
+      // 审计调整提议：模型只能提议，落库要用户按确认
+      { role: 'accountant', text: '建议登记调整 2025-03：补提 2025 年折旧，金额 3,000.00。', at: '',
+        adjustment: {
+          period: '2025-03', year: 2025, month: 3,
+          kind: 'adjust', kindLabel: '调整',
+          summary: '补提 2025 年折旧',
+          reason: '折旧计算表显示少提 3,000.00，按平均年限法补提',
+          evidence: '折旧计算表（底稿索引 F-3）',
+          amount: 300000, problems: [],
+          lines: [
+            { lineNo: 1, accountCode: '560205', accountName: '管理费用—折旧费', summary: '补提折旧', debit: 300000, credit: 0, contactId: null, employeeId: null, deptId: 1, projectId: null, auxDesc: '生产部' },
+            { lineNo: 2, accountCode: '1602', accountName: '累计折旧', summary: '补提折旧', debit: 0, credit: 300000, contactId: null, employeeId: null, deptId: null, projectId: null, auxDesc: '' },
           ],
         } },
     ],

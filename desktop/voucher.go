@@ -3,10 +3,13 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"miniaccount/internal/domain/money"
 	"miniaccount/internal/service"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // ---------------------------------------------------------------------------
@@ -303,6 +306,34 @@ func (a *App) UploadAttachment(req UploadAttachmentRequest) (out *service.Attach
 		return nil, &Fault{Kind: FaultInvalid, Message: "附件内容不是合法的 base64"}
 	}
 	return wrap(svc.AttachToVoucher(a.context(), req.VoucherID, req.FileName, data))
+}
+
+// OpenAttachment 用系统默认程序打开一份附件。
+//
+// ★ 参数是 **hash 而不是路径**。
+//
+// 界面若能传任意路径，这个绑定就成了「打开任意文件」的入口
+// （配合社工，可以诱导用户点开一个伪装成发票的可执行文件）。
+// hash 只能指向账套 .files 目录里已有的文件，路径由 store 校验后派生。
+func (a *App) OpenAttachment(hash string) (err error) {
+	defer recoverTo(&err, "OpenAttachment")()
+	svc, f := a.book()
+	if f != nil {
+		return f
+	}
+	store, serr := svc.Attachments()
+	if serr != nil {
+		return classify(serr)
+	}
+	p, perr := store.Path(hash)
+	if perr != nil {
+		return &Fault{Kind: FaultInvalid, Message: "附件标识不合法"}
+	}
+	if !store.Exists(hash) {
+		return &Fault{Kind: FaultIO, Message: "这份原件的文件已经不在账套里了"}
+	}
+	runtime.BrowserOpenURL(a.context(), "file://"+filepath.ToSlash(p))
+	return nil
 }
 
 // AttachmentPath 返回附件的磁盘路径，供「用系统程序打开」使用。

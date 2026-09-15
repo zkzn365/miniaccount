@@ -1393,3 +1393,610 @@ test('★ 收尾：重新打开演示账套，菜单恢复可点', async () => {
   assert.ok(page.text().includes('杭州云帆软件有限公司'),
     '首页没渲染出演示账套的单位名称')
 })
+
+// ---------------------------------------------------------------------------
+// 审计底稿：界面 → 绑定 → 领域 整条路
+// ---------------------------------------------------------------------------
+//
+// 这一条守的是全账套最容易被做错的一处口径：
+//
+//	**生成凭证 ≠ 已入账。**
+//
+// 凭证录完只落草稿，过账只在账期结算 —— 调整凭证也一样。
+// 所以「生成调整凭证」之后，审定数里**仍然**要加着这笔调整、
+// 未更正错报里也**仍然**要列着它。若界面把「已生成凭证」当成「已入账」，
+// 用户会看到错报凭空消失、审定数少了一块 —— 而账其实一点没改。
+test('★ 审计底稿：三个门槛算得对，生成凭证不等于已入账', async () => {
+  await page.goto('/workpaper')
+  await settle(80)
+
+  const per = await bundle.api.api.periods()
+  // 用最后**一期已启用**的期间。
+  //
+  // ★ 不能用未启用的期间：调整凭证同样是凭证，往一个没开的月份里
+  // 塞草稿会被 `期间未启用` 拦下（这条规则本身是对的 ——
+  // 没开的月份结账时不会再跑，那张草稿会永远躺在账套里没人看见）。
+  // 底稿可以按任意期间编，但「生成凭证」这一步要求期间是开的。
+  const opens = (per.data.periods ?? []).filter((p) => p.status === 'open')
+  assert.ok(opens.length > 0, '演示账套没有已启用的期间')
+  const target = opens[opens.length - 1]
+  const y = target.year
+  const m = String(target.month).padStart(2, '0')
+
+  // 期间下拉在**第一个 select**（页面上只有这一个 select 在卡片外）
+  const perSel = [...win.document.body.querySelectorAll('select')][0]
+  perSel.value = target.label
+  perSel.dispatchEvent(new win.Event('change', { bubbles: true }))
+  await settle(120)
+
+  // ---- 1. 确定重要性水平（走弹窗）----
+  await page.click('确定重要性')
+  await settle(60)
+  await page.type(page.input('input[placeholder="10000000.00"]'), '10000000')
+  await page.type(page.input('input[placeholder="0.5"]'), '0.5')
+  await page.type(page.input('input[placeholder="60"]'), '60')
+  await page.type(page.input('input[placeholder="5"]'), '5')
+  await page.click('保存')
+  await settle(200)
+
+  let text = page.text()
+  // 10,000,000 × 0.5% = 50,000；× 60% = 30,000；× 5% = 2,500
+  for (const want of ['整体重要性', '实际执行重要性', '明显微小错报临界值',
+    '50,000.00', '30,000.00', '2,500.00']) {
+    assert.ok(text.includes(want),
+      `底稿上没有「${want}」—— 重要性水平没算出来或没渲染：${text.slice(0, 400)}`)
+  }
+  const wp0 = await bundle.api.api.workpaper({ year: y, month: target.month })
+  assert.equal(wp0.ok, true, wp0.fault?.message)
+  assert.equal(wp0.data.materiality.overall, 5000000, '整体重要性应当是 50,000.00 元')
+  assert.equal(wp0.data.materiality.performance, 3000000, '实际执行重要性应当是 30,000.00 元')
+  assert.equal(wp0.data.materiality.trivial, 250000, '明显微小错报临界值应当是 2,500.00 元')
+
+  // ---- 2. 登记一笔调整（走弹窗）----
+  await page.click('登记调整')
+  await settle(60)
+  await page.type(page.input('input[placeholder="补提 2025 年折旧"]'), '补提折旧（回归测试）')
+  const reasonBox = [...win.document.body.querySelectorAll('textarea')]
+    .find((a) => /折旧计算表/.test(a.getAttribute('placeholder') || ''))
+  assert.ok(reasonBox, '调整弹窗里没有「调整依据」输入框 —— 依据是底稿的柱子')
+  await page.type(reasonBox, '折旧计算表显示少提 3,000.00')
+
+  // 两行分录：560205 借 3000 / 1602 贷 3000
+  // ★ 科目下拉要按**行**取，不能按「哪个下拉里有这个科目」找：
+  // 两行的科目下拉选项完全一样，用 find(code) 永远命中第一行 ——
+  // 于是第二行一直是空的，提交时报「第 2 行没有科目」，
+  // 而错误信息看起来像是服务端的问题。
+  const acctSelects = () => [...win.document.body.querySelectorAll('select')]
+    .filter((sel) => [...sel.options].some((o) => o.value === '560205'))
+  const pick = async (row, code) => {
+    const sel = acctSelects()[row]
+    assert.ok(sel, `分录第 ${row + 1} 行的科目下拉找不到`)
+    sel.value = code
+    sel.dispatchEvent(new win.Event('change', { bubbles: true }))
+    await settle(60)
+  }
+  await pick(0, '560205')
+  await pick(1, '1602')
+
+  // 560205 要部门辅助核算：界面上必须出现部门下拉，而且必须填 ——
+  // 这一条与手工凭证完全一致（少了它服务端会打回「缺少必需的辅助核算」）
+  // ★ 部门下拉要排除科目下拉：科目编码（1001、560205）也全是数字，
+  // 按「有数字选项」找会命中第一行的科目下拉 —— 于是测试自己把
+  // 第一行的科目改成了「库存现金」，而报错看起来像服务端的问题。
+  const accts = acctSelects()
+  const auxSel = [...win.document.body.querySelectorAll('select')]
+    .filter((s) => !accts.includes(s))
+    .find((s) => [...s.options].some((o) => /^\d+$/.test(o.value)))
+  assert.ok(auxSel, '★ 560205 要求部门辅助核算，界面上却没给出部门下拉')
+  auxSel.value = [...auxSel.options].find((o) => /^\d+$/.test(o.value)).value
+  auxSel.dispatchEvent(new win.Event('change', { bubbles: true }))
+  await settle(30)
+
+  const amounts = [...win.document.body.querySelectorAll('input[placeholder="0.00"]')]
+  assert.equal(amounts.length, 4, `两行应当有 4 个金额框，实际 ${amounts.length}`)
+  await page.type(amounts[0], '3000') // 第 1 行借方
+  await page.type(amounts[3], '3000') // 第 2 行贷方
+  // ★ 断言必须看 document.body：Modal 用 Teleport 挂在 body 上，
+  // 在宿主节点**外面** —— 只看 page.text()（宿主）永远读不到弹窗里的字
+  const modalText = win.document.body.textContent.replace(/\s+/g, ' ')
+  assert.ok(modalText.includes('借贷平衡'),
+    `借贷相等时应当显示「借贷平衡」：${modalText.slice(0, 300)}`)
+
+  await page.click('保存调整')
+  await settle(200)
+
+  const wp1 = await bundle.api.api.workpaper({ year: y, month: target.month })
+  const adj = (wp1.data.adjustments ?? [])[0]
+  assert.ok(adj, `登记的调整没落进底稿：${
+    bundle.api.notices.items.map((n) => n.message).join(' | ') || '（无提示）'}`)
+  assert.equal(adj.amount, 300000, `调整金额 = ${adj.amount}，期望 300000 分`)
+  assert.equal(adj.booked, false, '刚登记的调整不该有凭证')
+  assert.equal(adj.stateLabel, '未入账（仅登记在底稿）', `状态文字 = ${adj.stateLabel}`)
+  assert.equal(wp1.data.misstatements.total, 300000, '未更正错报合计应当含这 3,000.00')
+  assert.ok(page.text().includes('补提折旧（回归测试）'),
+    `登记的调整没渲染出来：${page.text().slice(0, 400)}`)
+  // 审定表里也要看得到它（560205 的调整借方）
+  const row = (wp1.data.worksheet ?? []).find((r) => r.accountCode === '560205')
+  assert.ok(row, '审定表里没有 560205')
+  assert.equal(row.adjustDebit, 300000,
+    `审定表里 560205 的调整借方应当是 3,000.00，实际 ${JSON.stringify(row)}` +
+    `（调整 = ${JSON.stringify(adj)}）`)
+
+  // ---- 3. 生成调整凭证：底稿口径必须**一个字都不变** ----
+  //
+  // 这一步在界面上要点确认框，jsdom 里拿不到；而且它生成的是草稿凭证，
+  // 属于「写」的动作。这里直接调绑定，界面侧的渲染在下一段验。
+  const posted = await bundle.api.api.postAdjustment({ id: adj.id, by: '回归测试员' })
+  assert.equal(posted.ok, true, posted.fault?.message)
+
+  // ★ 要先离开再回来：路由到**同一个**路径时 Vue 不会重建组件，
+  // 于是页面上还挂着改之前的数据 —— 断言「界面显示草稿」会假红
+  await page.goto('/dashboard')
+  await page.goto('/workpaper')
+  await settle(150)
+  const wp2 = await bundle.api.api.workpaper({ year: y, month: target.month })
+  const adj2 = (wp2.data.adjustments ?? [])[0]
+  assert.equal(adj2.booked, true, '生成凭证后 booked 应当为真')
+  assert.equal(adj2.posted, false,
+    '★ 生成的只是草稿 —— posted 必须为假，过账只在账期结算')
+  assert.ok(/草稿/.test(adj2.stateLabel),
+    `状态文字要点明还是草稿，实际「${adj2.stateLabel}」`)
+  assert.equal(wp2.data.misstatements.total, 300000,
+    '★ 草稿没进账，这笔仍是未更正错报 —— 合计不能变')
+  const row2 = (wp2.data.worksheet ?? []).find((r) => r.accountCode === '560205')
+  assert.equal(row2.adjustDebit, 300000,
+    '★ 凭证没过账，审定数里仍然要加着这笔调整')
+  assert.ok(page.text().includes('草稿'),
+    `界面上要说清「已生成凭证（草稿）」：${page.text().slice(0, 400)}`)
+
+  // 那张凭证本身是草稿，来源是审计调整
+  const v = await bundle.api.api.voucherDetail(adj2.voucherId)
+  assert.equal(v.ok, true, v.fault?.message)
+  assert.equal(v.data.status, 'draft', '调整凭证必须是草稿')
+  assert.equal(v.data.source, 'audit', `凭证来源 = ${v.data.source}，期望 audit`)
+})
+
+// ---------------------------------------------------------------------------
+// 审计证据链：结论 → 依据 → 原件还在不在
+// ---------------------------------------------------------------------------
+//
+// 这一条守的是证据链上最要紧的一件事：
+//
+//	**底稿上写着「依据：折旧计算表」，而那份文件早就不在了。**
+//
+// 这比一开始就没写依据更糟 —— 它提供了一个假的确定感。
+// 所以「原件还在不在」必须是每次打开这一页现查的，
+// 而不是挂上那一刻拍下的一个标记。
+test('★ 审计证据链：挂依据、判重、原件丢了要说出来', async () => {
+  await page.goto('/dashboard')
+  await page.goto('/workpaper')
+  await settle(120)
+
+  const per = await bundle.api.api.periods()
+  const opens = (per.data.periods ?? []).filter((p) => p.status === 'open')
+  assert.ok(opens.length > 0, '演示账套没有已启用的期间')
+  const target = opens[opens.length - 1]
+  const sel = [...win.document.body.querySelectorAll('select')][0]
+  sel.value = target.label
+  sel.dispatchEvent(new win.Event('change', { bubbles: true }))
+  await settle(120)
+
+  // 定重要性水平（若上一轮没定）
+  let w = await bundle.api.api.workpaper({ year: target.year, month: target.month })
+  assert.equal(w.ok, true, w.fault?.message)
+  if (!w.data.materiality) {
+    const m = await bundle.api.api.saveMateriality({
+      year: target.year, month: target.month, benchmark: 'assets',
+      benchmarkAmountYuan: '10000000', ratePpm: 5000,
+      performancePpm: 600000, trivialPpm: 50000, note: '回归测试',
+    })
+    assert.equal(m.ok, true, m.fault?.message)
+  }
+
+  // 登记一笔调整（走接口、不走弹窗：弹窗那条路上一轮已经验过了）
+  const dept = (await bundle.api.api.departments()).data?.find((d) => d.enabled)
+  assert.ok(dept, '演示账套没有启用中的部门')
+  const adj = await bundle.api.api.saveAdjustment({
+    id: 0, year: target.year, month: target.month, code: '', kind: 'adjust',
+    summary: '证据链回归测试', reason: '核对折旧计算表后发现少提',
+    evidence: '', operator: '回归测试员',
+    lines: [
+      { accountCode: '560205', summary: '补提', debitYuan: '100.00', creditYuan: '', deptId: dept.id },
+      { accountCode: '1602', summary: '补提', debitYuan: '', creditYuan: '100.00' },
+    ],
+  })
+  assert.equal(adj.ok, true, adj.fault?.message)
+  const adjID = (adj.data.adjustments ?? []).find((a) => a.summary === '证据链回归测试')?.id
+  assert.ok(adjID, `调整没登记上：${JSON.stringify(adj.data.adjustments)}`)
+
+  // 挂一份附件（走接口：弹窗里的文件选择框在 jsdom 里点不出文件）
+  const content = Buffer.from('资产,本期折旧\n电脑,1000\n').toString('base64')
+  const added = await bundle.api.api.addEvidence({
+    ownerType: 'adjustment', ownerId: adjID, refKind: 'attachment',
+    refId: 0, refLabel: '', note: '表上少提 100.00',
+    hash: '', fileName: '折旧计算表.csv', dataBase64: content, by: '回归测试员',
+  })
+  assert.equal(added.ok, true, added.fault?.message)
+
+  const ev = await bundle.api.api.evidence({ year: target.year, month: target.month })
+  assert.equal(ev.ok, true, ev.fault?.message)
+  const chain = (ev.data.chains ?? []).find((c) => c.ownerType === 'adjustment' && c.ownerId === adjID)
+  assert.ok(chain, '证据链里没有那笔调整')
+  assert.equal(chain.total, 1, `应当有 1 份依据，实际 ${chain.total}`)
+  const link = chain.links[0]
+  assert.equal(link.hasFile, true, '附件类依据应当带文件')
+  assert.equal(link.missing, false, '文件刚上传，不该报丢失')
+  assert.ok(link.hash && link.path, '应当给出 hash 与磁盘路径')
+
+  // 同一份文件再挂一次：不许算两份依据
+  const dup = await bundle.api.api.addEvidence({
+    ownerType: 'adjustment', ownerId: adjID, refKind: 'attachment',
+    refId: 0, refLabel: '', note: '', hash: link.hash, fileName: '折旧计算表.csv',
+    dataBase64: '', by: '回归测试员',
+  })
+  assert.equal(dup.ok, false, '同一份资料挂两次应当被拦下')
+  assert.ok(/已经挂在这个结论下/.test(dup.fault?.message ?? ''),
+    `报错要说清是重复：${dup.fault?.message}`)
+
+  // 界面上要能看到它
+  await page.goto('/dashboard')
+  await page.goto('/workpaper')
+  await settle(200)
+  let body = win.document.body.textContent.replace(/\s+/g, ' ')
+  assert.ok(body.includes('审计证据链'), `工作底稿页没有证据链一块：${body.slice(0, 300)}`)
+  assert.ok(body.includes('折旧计算表.csv'),
+    `挂上的依据没渲染出来。提示：${
+      bundle.api.notices.items.map((n) => n.message).join(' | ') || '（无）'}` +
+    ` 后端数据：${JSON.stringify(chain)}`)
+  assert.ok(body.includes('证据链回归测试'), '证据链里应当能看到那笔调整')
+
+  // ---- 原件不见了：必须报出来 ----
+  const filePath = path.join(path.dirname(dbPath), '.files', link.hash.slice(0, 2), link.hash)
+  assert.ok(fs.existsSync(filePath), `附件实体不在预期位置：${filePath}`)
+  fs.unlinkSync(filePath)
+
+  const ev2 = await bundle.api.api.evidence({ year: target.year, month: target.month })
+  const chain2 = (ev2.data.chains ?? []).find((c) => c.ownerType === 'adjustment' && c.ownerId === adjID)
+  assert.equal(chain2.links[0].missing, true,
+    '★ 文件实体已经删掉，必须报「原件已找不到」—— 否则底稿会提供假的确定感')
+  assert.equal(ev2.data.broken, 1, `broken 应当是 1，实际 ${ev2.data.broken}`)
+  assert.ok(/找不到/.test(ev2.data.concludes),
+    `结论要说清是原件丢了：${ev2.data.concludes}`)
+  assert.ok(!/还没有附依据/.test(ev2.data.chains
+    .find((c) => c.ownerType === 'adjustment' && c.ownerId === adjID).concludes),
+    '★ 证据丢了不能说成「没有证据」—— 补的方式完全不同')
+
+  // 界面上也要说得出「原件已找不到」
+  await page.goto('/dashboard')
+  await page.goto('/workpaper')
+  await settle(200)
+  body = win.document.body.textContent.replace(/\s+/g, ' ')
+  assert.ok(body.includes('原件已找不到'),
+    `界面上没标出原件丢了：${body.slice(0, 400)}`)
+
+  // 收尾：把这笔测试调整删掉，别影响别的用例
+  const del = await bundle.api.api.deleteAdjustment(adjID)
+  assert.equal(del.ok, true, del.fault?.message)
+})
+
+// ---------------------------------------------------------------------------
+// 税务计算表：三张表的口径与「不可直接申报」
+// ---------------------------------------------------------------------------
+//
+// 这一条守的是三张表各自最容易做错的口径：
+//
+//	增值税      专栏取数 + 留抵从上期滚过来
+//	企业所得税  **累计口径**（按本季算会系统性少缴）+ 纳税调整必须人工填
+//	个人所得税  累计预扣（读工资单固化的累计字段）
+//
+// 以及一条硬边界：算出来的东西**不能直接用于申报**。
+test('★ 税务计算表：三张表算得出数，且标明不可直接申报', async () => {
+  await page.goto('/dashboard')
+  await page.goto('/taxreturn')
+  await settle(150)
+
+  const per = await bundle.api.api.periods()
+  const opens = (per.data.periods ?? []).filter((p) => p.status === 'open')
+  assert.ok(opens.length > 0, '演示账套没有已启用的期间')
+  const target = opens[opens.length - 1]
+  const sel = [...win.document.body.querySelectorAll('select')][0]
+  sel.value = target.label
+  sel.dispatchEvent(new win.Event('change', { bubbles: true }))
+  await settle(150)
+
+  // ---- 1. 增值税 ----
+  const vat = await bundle.api.api.taxReturn({ kind: 'vat', year: target.year, month: target.month })
+  assert.equal(vat.ok, true, vat.fault?.message)
+  assert.equal(vat.data.submittable, false,
+    '★ 税务计算表不能被标记为可直接申报')
+  assert.ok(vat.data.rows.length > 0, '增值税表没有行')
+  for (const r of vat.data.rows) {
+    assert.ok((r.source || '').trim().length > 0,
+      `第 ${r.line} 行「${r.label}」没有数据来源 —— 会计没法拿它去核对`)
+  }
+  assert.ok(vat.data.keys.length > 0, '增值税表没有关键数')
+  assert.ok(vat.data.identities.some((i) => /纳税人身份/.test(i.label)),
+    '增值税表要写清用的纳税人身份')
+  // 附加税费是否减半取决于身份，所以身份必须在表上
+  const smallScale = (vat.data.identities.find((i) => /纳税人身份/.test(i.label)) || {}).value
+  assert.ok(/一般纳税人|小规模纳税人|未填写/.test(smallScale), `身份文字不对：${smallScale}`)
+
+  // 界面上要看得见这些数
+  let body = win.document.body.textContent.replace(/\s+/g, ' ')
+  assert.ok(body.includes('不可直接申报'), `页面上没有写明不可直接申报：${body.slice(0, 300)}`)
+  assert.ok(body.includes('数据来源'), `页面上没有「数据来源」一列：${body.slice(0, 300)}`)
+  const needAmount = (vat.data.keys[0].amount / 100).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  })
+  assert.ok(body.includes(needAmount),
+    `页面没渲染出关键数 ${needAmount}：${body.slice(0, 400)}`)
+
+  // ---- 2. 企业所得税：累计口径 + 纳税调整人工填 ----
+  const cit1 = await bundle.api.api.taxReturn({
+    kind: 'cit', year: target.year, month: target.month,
+  })
+  assert.equal(cit1.ok, true, cit1.fault?.message)
+  assert.ok(cit1.data.inputFields.length >= 3,
+    '企业所得税要给出纳税调整等输入项 —— 这几项账上算不出来')
+
+  // 填一笔纳税调整增加额：应纳所得税额必须按**适用税率**跟着变
+  //
+  // ★ 不能写死 25%：账套是企业规模为小型/微型时会按 5% 实际税负算
+  // （这正是「超过 300 万即不符合小微条件」那条规则的入口）。
+  // 从表上的「适用税率」行读出比例再算 —— 顺便验证了那一行确实写着税率。
+  const rateRow = cit1.data.rows.find((r) => r.line === '8')
+  assert.ok(rateRow, `企业所得税表里应当有「适用税率」一行：${JSON.stringify(cit1.data.rows)}`)
+  const m = /(\d+(?:\.\d+)?)%/.exec(rateRow.label)
+  assert.ok(m, `「适用税率」行里要写清百分比：${rateRow.label}`)
+  const ratePpm = Math.round(Number(m[1]) * 10000) // 百分比 → 百万分比
+
+  const before = cit1.data.keys.find((k) => k.label === '应纳所得税额').amount
+  const cit2 = await bundle.api.api.taxReturn({
+    kind: 'cit', year: target.year, month: target.month,
+    taxAdjustIncreaseYuan: '10000',
+  })
+  assert.equal(cit2.ok, true, cit2.fault?.message)
+  const after = cit2.data.keys.find((k) => k.label === '应纳所得税额').amount
+  const want = Math.round(1000000 * ratePpm / 1000000) // 10,000 元 → 分，乘税率
+  assert.equal(after - before, want,
+    `纳税调整增加 10,000 应让应纳所得税额增加 ${want / 100}（税率 ${m[1]}%），实际差 ${(after - before) / 100}`)
+
+  // 在界面上切到企业所得税标签页：输入框与「优惠口径」都要在
+  await page.click('企业所得税')
+  await settle(150)
+  body = win.document.body.textContent.replace(/\s+/g, ' ')
+  assert.ok(body.includes('纳税调整增加额'), `企业所得税页没有纳税调整输入：${body.slice(0, 400)}`)
+  assert.ok(/小型微利企业/.test(body), '页面上要让用户确认优惠口径')
+  assert.ok(/累计|年初/.test(body), `企业所得税是累计口径，页面上要说清：${body.slice(0, 400)}`)
+
+  // ---- 3. 个人所得税 ----
+  await page.click('个人所得税')
+  await settle(150)
+  const iit = await bundle.api.api.taxReturn({ kind: 'iit', year: target.year, month: target.month })
+  assert.equal(iit.ok, true, iit.fault?.message)
+  body = win.document.body.textContent.replace(/\s+/g, ' ')
+  assert.ok(body.includes('个人所得税'), `个税页没渲染：${body.slice(0, 300)}`)
+  if (iit.data.rows.length === 0) {
+    // 演示账套没有工资单也该给出一句能照着做的话
+    assert.ok(/工资/.test(body), `没有工资单时要告诉用户去哪儿生成：${body.slice(0, 400)}`)
+  } else {
+    assert.ok(body.includes('累计'), `个税是累计预扣口径，页面上要说清：${body.slice(0, 400)}`)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 审计与鉴证文书：事实来自账套，意见由人选
+// ---------------------------------------------------------------------------
+//
+// 这一条守两件事：
+//
+//  1. 文书里的**事实**来自账套与底稿（不是抄模板填空）；
+//  2. 缺什么就明明白白列出来，而且**全文最前面印「请勿签发」**——
+//     一份看起来已经写好了的草稿被拿去盖章，比打印不出来更糟。
+test('★ 审计文书：三份草稿都标明不可直接出具，待补事项印在最前面', async () => {
+  await page.goto('/dashboard')
+  await page.goto('/auditdoc')
+  await settle(150)
+
+  const per = await bundle.api.api.periods()
+  const opens = (per.data.periods ?? []).filter((p) => p.status === 'open')
+  assert.ok(opens.length > 0, '演示账套没有已启用的期间')
+  const target = opens[opens.length - 1]
+  const sel = [...win.document.body.querySelectorAll('select')][0]
+  sel.value = target.label
+  sel.dispatchEvent(new win.Event('change', { bubbles: true }))
+  await settle(150)
+
+  // ---- 1. 审计报告：事实来自账套 ----
+  const audit = await bundle.api.api.auditDoc({
+    kind: 'audit', year: target.year, month: target.month,
+    opinion: 'unqualified', firmName: '回归测试会计师事务所',
+    reportNo: '测会审字〔2025〕第 1 号', cpa1: '张三', cpa2: '李四',
+    reportDate: '2026-03-31',
+  })
+  assert.equal(audit.ok, true, audit.fault?.message)
+  assert.equal(audit.data.draft, true, '★ 软件产出的必须是草稿')
+  assert.equal(audit.data.submittable, false, '★ 不能标记为可直接出具')
+  assert.ok(audit.data.sections.length >= 4, '审计报告至少要有意见、基础、管理层责任、注册会计师责任四段')
+  for (const s of audit.data.sections) {
+    assert.ok((s.source || '').trim().length > 0,
+      `段落「${s.title}」没有写事实来源 —— 报告里的事实要能追到账套或底稿`)
+  }
+  assert.ok(/两名注册会计师/.test(audit.data.signature),
+    '生效条件要写清签字要求')
+  // 报表数字真的来自账套：主要项目段不能是 0
+  const main = audit.data.sections.find((s) => /主要项目/.test(s.title))
+  assert.ok(main, '审计报告里没有「已审财务报表主要项目」一段')
+  assert.ok(!/资产总额 0\.00/.test(main.body),
+    `★ 资产总额取数为 0 —— 报表取数断了：${main.body}`)
+
+  // 缺什么要列出来（演示账套的底稿大概率没有证据链/重要性水平）
+  if (!audit.data.canIssue) {
+    assert.ok(audit.data.missing.length > 0, '不能签发的稿子必须列出待补事项')
+    assert.ok(/请勿签发/.test(audit.data.fullText),
+      '★ 有待补事项时，全文最前面必须印「请勿签发」')
+  }
+
+  // ---- 2. 意见类型必须由人选 ----
+  const ops = await bundle.api.api.auditOpinions()
+  assert.equal(ops.ok, true, ops.fault?.message)
+  assert.equal(ops.data.length, 4, '四种意见都要可选')
+  for (const o of ops.data) {
+    assert.ok(o.label && o.hint, `意见 ${o.value} 缺少中文名或适用说明`)
+  }
+  // 否定意见必须带出「形成否定意见的基础」一段
+  const adverse = await bundle.api.api.auditDoc({
+    kind: 'audit', year: target.year, month: target.month,
+    opinion: 'adverse', firmName: '某所', reportNo: '测会审字〔2025〕第 2 号',
+    cpa1: '张三', cpa2: '李四', reportDate: '2026-03-31',
+  })
+  assert.equal(adverse.ok, true, adverse.fault?.message)
+  assert.ok(adverse.data.sections.some((s) => /形成否定意见的基础/.test(s.title)),
+    '★ 非无保留意见必须有「形成……的基础」一段')
+  const adverseBody = adverse.data.sections.find((s) => s.title === '审计意见').body
+  assert.ok(/未能公允反映/.test(adverseBody),
+    `否定意见要明说「未能公允反映」：${adverseBody}`)
+  assert.ok(!/公允反映了/.test(adverseBody),
+    `★ 否定意见里出现了无保留意见的措辞「公允反映了」—— 措辞错了结论就变了：${adverseBody}`)
+
+  // ---- 3. 管理建议书：发现来自体检与底稿 ----
+  const mgmt = await bundle.api.api.auditDoc({
+    kind: 'management', year: target.year, month: target.month,
+    firmName: '回归测试会计师事务所', reportNo: '测会建字〔2025〕第 1 号',
+    reportDate: '2026-03-31',
+  })
+  assert.equal(mgmt.ok, true, mgmt.fault?.message)
+  const advice = mgmt.data.sections.find((s) => /发现的问题与建议/.test(s.title))
+  assert.ok(advice, '管理建议书要有「发现的问题与建议」一段')
+  assert.ok(/不构成对财务报表的审计意见/.test(
+    mgmt.data.sections.find((s) => s.title === '说明').body),
+    '建议书要写清它不构成审计意见')
+
+  // ---- 4. 界面上要看得见 ----
+  await page.goto('/dashboard')
+  await page.goto('/auditdoc')
+  await settle(200)
+  const body = win.document.body.textContent.replace(/\s+/g, ' ')
+  assert.ok(body.includes('审计报告'), `文书页没渲染：${body.slice(0, 300)}`)
+  assert.ok(body.includes('注册会计师'), '页面上要有签字信息一块')
+  assert.ok(/草稿|待签字盖章|还不能签发/.test(body),
+    `页面上要说清这是草稿：${body.slice(0, 400)}`)
+  // 文号是我们刚填的 → 说明表单值真的传下去了（跨页面重进后从输入框回填）
+  assert.ok(body.includes('审计意见') || body.includes('形成'), '页面上要能看到正文段落')
+})
+
+// ---------------------------------------------------------------------------
+// 税务申报台账：报没报、报了多少、账后来改了没有
+// ---------------------------------------------------------------------------
+//
+// 这一条守的是台账存在的理由：
+//
+//	**申报是发生过的事实，计算表是派生结果。**
+//
+// 所以：同一期同一税种只能有一条有效记录；更正要先作废（留痕）；
+// 而申报之后账又改了，「当时报了多少」与「现在算出多少」的差必须看得见。
+test('★ 申报台账：登记、重复拦截、作废重报、与计算表对得上', async () => {
+  await page.goto('/dashboard')
+  await page.goto('/taxreturn')
+  await settle(150)
+
+  const per = await bundle.api.api.periods()
+  const opens = (per.data.periods ?? []).filter((p) => p.status === 'open')
+  assert.ok(opens.length > 0, '演示账套没有已启用的期间')
+  const target = opens[opens.length - 1]
+  const sel = [...win.document.body.querySelectorAll('select')][0]
+  sel.value = target.label
+  sel.dispatchEvent(new win.Event('change', { bubbles: true }))
+  await settle(150)
+
+  // ---- 1. 报之前：计算表上要显示「还没登记」 ----
+  const before = await bundle.api.api.taxReturn({
+    kind: 'vat', year: target.year, month: target.month,
+  })
+  assert.equal(before.ok, true, before.fault?.message)
+  assert.equal(before.data.filing, null,
+    '还没登记时不该有申报记录（这条用例要求该期间尚未登记过）')
+  assert.ok(/还没有登记申报记录/.test(before.data.filingHint),
+    `计算表上要提示还没登记：${before.data.filingHint}`)
+
+  // ---- 2. 登记：金额按当前计算表填（不用人抄） ----
+  const filed = await bundle.api.api.saveTaxFiling({
+    id: 0, kind: 'vat', year: target.year, month: target.month,
+    status: 'filed', filedDate: nextMonthDay(target, 15), paidDate: '',
+    payableYuan: '', taxAmountYuan: '', surchargeYuan: '', paidYuan: '',
+    fromCurrentReturn: true, channel: '电子税务局', receiptNo: 'REG-1',
+    note: '', operator: '回归测试员',
+  })
+  assert.equal(filed.ok, true, filed.fault?.message)
+  const item = filed.data.items.find((it) => it.period === target.label && it.kind === 'vat')
+  assert.ok(item, `台账里没有刚登记的记录：${JSON.stringify(filed.data.items)}`)
+  assert.equal(item.payable, before.data.payable,
+    '★ 金额应当按当前计算表填，不该让人手抄')
+  assert.equal(item.diff, 0, `刚登记应当与计算表一致：${item.reconcile}`)
+
+  // 计算表上要显示申报状态
+  const after = await bundle.api.api.taxReturn({
+    kind: 'vat', year: target.year, month: target.month,
+  })
+  assert.ok(after.data.filing, '★ 报完之后计算表上必须显示申报状态')
+  assert.ok(/一致/.test(after.data.filingHint), `勾稽提示：${after.data.filingHint}`)
+
+  // ---- 3. 同一期同一税种不能再登记一条 ----
+  const dup = await bundle.api.api.saveTaxFiling({
+    id: 0, kind: 'vat', year: target.year, month: target.month,
+    status: 'filed', filedDate: nextMonthDay(target, 20), paidDate: '',
+    payableYuan: '', taxAmountYuan: '', surchargeYuan: '', paidYuan: '',
+    fromCurrentReturn: true, channel: '', receiptNo: '', note: '', operator: '回归测试员',
+  })
+  assert.equal(dup.ok, false, '同一属期同一税种登记两次应当被拦下')
+  assert.ok(/已经登记过申报/.test(dup.fault?.message ?? ''),
+    `报错要说清已经报过：${dup.fault?.message}`)
+
+  // ---- 4. 申报日期不能早于属期月末 ----
+  const voided0 = await bundle.api.api.saveTaxFiling({
+    id: 0, kind: 'iit', year: target.year, month: target.month,
+    status: 'filed', filedDate: `${target.label}-10`, paidDate: '',
+    payableYuan: '', taxAmountYuan: '', surchargeYuan: '',
+    fromCurrentReturn: true, channel: '', receiptNo: '', note: '', operator: '回归测试员',
+  })
+  assert.equal(voided0.ok, false, '申报日期早于属期月末应当被拦下')
+
+  // ---- 5. 更正申报：作废（留痕）→ 重新登记 ----
+  const bad = await bundle.api.api.voidTaxFiling({ id: item.id, by: '回归测试员', reason: '' })
+  assert.equal(bad.ok, false, '作废不写原因应当被拦下')
+  const voided = await bundle.api.api.voidTaxFiling({
+    id: item.id, by: '回归测试员', reason: '应补税额填错，更正申报',
+  })
+  assert.equal(voided.ok, true, voided.fault?.message)
+  assert.equal(voided.data.voided, 1, '作废数应当是 1')
+  assert.equal(voided.data.effective, 0, '作废后不该还有有效记录')
+  const refiled = await bundle.api.api.saveTaxFiling({
+    id: 0, kind: 'vat', year: target.year, month: target.month,
+    status: 'paid', filedDate: nextMonthDay(target, 20), paidDate: nextMonthDay(target, 22),
+    payableYuan: '', taxAmountYuan: '', surchargeYuan: '', paidYuan: '',
+    fromCurrentReturn: true, channel: '电子税务局', receiptNo: 'REG-2',
+    note: '更正申报', operator: '回归测试员',
+  })
+  assert.equal(refiled.ok, true, refiled.fault?.message)
+  assert.equal(refiled.data.effective, 1, '重报后应当有 1 条有效')
+  assert.equal(refiled.data.voided, 1, '★ 作废记录必须留着（痕迹）')
+  assert.ok(refiled.data.items.some((it) => it.status === 'void'),
+    '台账里要能看到作废的那一条')
+
+  // ---- 6. 界面上要看得见台账 ----
+  await page.goto('/dashboard')
+  await page.goto('/taxreturn')
+  await settle(200)
+  const body = win.document.body.textContent.replace(/\s+/g, ' ')
+  assert.ok(body.includes('本年申报台账'), `页面上没有台账一块：${body.slice(0, 400)}`)
+  assert.ok(body.includes(target.label), '台账里要能看到刚登记的属期')
+  assert.ok(/已申报|已作废/.test(body), `台账里要能看到状态：${body.slice(0, 400)}`)
+  assert.ok(/更正申报/.test(body), '页面上要写清更正的流程')
+})
+
+/** nextMonthDay 给出某期间**次月**的某一天（申报日期不能在属期内）。 */
+function nextMonthDay(p, day) {
+  const m = p.month === 12 ? 1 : p.month + 1
+  const y = p.month === 12 ? p.year + 1 : p.year
+  return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}

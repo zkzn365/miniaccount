@@ -11,6 +11,7 @@ import (
 	"miniaccount/internal/domain/money"
 	"miniaccount/internal/domain/period"
 	"miniaccount/internal/domain/report"
+	"miniaccount/internal/domain/workpaper"
 )
 
 // ---------------------------------------------------------------------------
@@ -314,5 +315,51 @@ func (r *AIRepo) PreviewPayroll(ctx context.Context, k aiprovider.PeriodKey) (
 		}
 		out.People = append(out.People, p)
 	}
+	return out, nil
+}
+
+// Workpaper 读某期审计底稿的紧凑形态（供 AI 会计查证）。
+//
+// ★ 只读，而且**不重算**任何东西：
+// 重要性水平、未更正错报合计、结论，全部复用底稿仓储与领域函数。
+// 在这里重写一遍口径，AI 说的数就会与底稿页上的数不一样 ——
+// 而用户会相信哪一个？两边都信，然后发现对不上。
+func (r *AIRepo) Workpaper(ctx context.Context, k aiprovider.PeriodKey) (
+	*aiprovider.WorkpaperBrief, error) {
+
+	key := period.NewKey(k.Year, k.Month)
+	wp := r.db.Workpapers()
+
+	ws, err := wp.Worksheet(ctx, key)
+	if err != nil {
+		return nil, translateErr(err)
+	}
+	adjs, err := wp.Adjustments(ctx, key)
+	if err != nil {
+		return nil, translateErr(err)
+	}
+
+	out := &aiprovider.WorkpaperBrief{Period: key.String(), Adjustments: []aiprovider.AdjustmentBrief{}}
+	if ws.Materiality != nil {
+		m := ws.Materiality
+		out.Materiality = &aiprovider.MaterialityBrief{
+			Benchmark: m.Benchmark.Label(), BenchmarkAmount: m.BenchmarkAmount,
+			Overall: m.Overall(), Performance: m.Performance(), Trivial: m.Trivial(),
+			Note: m.Note,
+		}
+	}
+	for _, a := range adjs {
+		out.Adjustments = append(out.Adjustments, aiprovider.AdjustmentBrief{
+			Code: a.Code, Kind: a.Kind.Label(), Summary: a.Summary,
+			Reason: a.Reason, Evidence: a.Evidence, Amount: a.Amount(),
+			Booked: a.Booked, Posted: a.Posted,
+		})
+	}
+	// 未更正错报用与底稿页**同一个**领域函数算
+	sum := workpaper.Misstatements(adjs, ws.Materiality)
+	out.MisstatementTotal = sum.Total
+	out.MisstatementCount = len(sum.Items)
+	out.ReclassCount = sum.ReclassCount
+	out.Concludes = sum.Concludes()
 	return out, nil
 }

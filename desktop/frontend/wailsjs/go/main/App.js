@@ -54,6 +54,10 @@ export function ActiveContacts(arg1, arg2) {
   return window['go']['main']['App']['ActiveContacts'](arg1, arg2);
 }
 
+export function AddEvidence(arg1) {
+  return window['go']['main']['App']['AddEvidence'](arg1);
+}
+
 export function AdjustSalary(arg1) {
   return window['go']['main']['App']['AdjustSalary'](arg1);
 }
@@ -86,8 +90,20 @@ export function AuditAttachments(arg1, arg2) {
   return window['go']['main']['App']['AuditAttachments'](arg1, arg2);
 }
 
+export function AuditDoc(arg1) {
+  return window['go']['main']['App']['AuditDoc'](arg1);
+}
+
+export function AuditDocKinds() {
+  return window['go']['main']['App']['AuditDocKinds']();
+}
+
 export function AuditLog(arg1) {
   return window['go']['main']['App']['AuditLog'](arg1);
+}
+
+export function AuditOpinions() {
+  return window['go']['main']['App']['AuditOpinions']();
 }
 
 export function AuditSettings() {
@@ -206,6 +222,10 @@ export function DeleteAccount(arg1) {
   return window['go']['main']['App']['DeleteAccount'](arg1);
 }
 
+export function DeleteAdjustment(arg1) {
+  return window['go']['main']['App']['DeleteAdjustment'](arg1);
+}
+
 export function DeleteAmortization(arg1) {
   return window['go']['main']['App']['DeleteAmortization'](arg1);
 }
@@ -220,6 +240,14 @@ export function DeleteContact(arg1) {
 
 export function DeleteDepartment(arg1) {
   return window['go']['main']['App']['DeleteDepartment'](arg1);
+}
+
+export function DeleteEvidence(arg1) {
+  return window['go']['main']['App']['DeleteEvidence'](arg1);
+}
+
+export function DeleteMateriality(arg1) {
+  return window['go']['main']['App']['DeleteMateriality'](arg1);
 }
 
 export function DeleteVoucher(arg1) {
@@ -240,6 +268,14 @@ export function DisposeAsset(arg1) {
 
 export function Employees(arg1) {
   return window['go']['main']['App']['Employees'](arg1);
+}
+
+export function Evidence(arg1) {
+  return window['go']['main']['App']['Evidence'](arg1);
+}
+
+export function EvidenceKinds() {
+  return window['go']['main']['App']['EvidenceKinds']();
 }
 
 export function ExportAuditLog(arg1, arg2) {
@@ -326,6 +362,10 @@ export function MatchBankFlows() {
   return window['go']['main']['App']['MatchBankFlows']();
 }
 
+export function OpenAttachment(arg1) {
+  return window['go']['main']['App']['OpenAttachment'](arg1);
+}
+
 export function OpenBook(arg1) {
   return window['go']['main']['App']['OpenBook'](arg1);
 }
@@ -348,6 +388,10 @@ export function PayrollRuns() {
 
 export function Periods() {
   return window['go']['main']['App']['Periods']();
+}
+
+export function PostAdjustment(arg1) {
+  return window['go']['main']['App']['PostAdjustment'](arg1);
 }
 
 export function PostBankFlows(arg1) {
@@ -442,6 +486,10 @@ export function SaveAccount(arg1) {
   return window['go']['main']['App']['SaveAccount'](arg1);
 }
 
+export function SaveAdjustment(arg1) {
+  return window['go']['main']['App']['SaveAdjustment'](arg1);
+}
+
 export function SaveAmortization(arg1) {
   return window['go']['main']['App']['SaveAmortization'](arg1);
 }
@@ -486,6 +534,14 @@ export function SaveInvoice(arg1) {
   return window['go']['main']['App']['SaveInvoice'](arg1);
 }
 
+export function SaveMateriality(arg1) {
+  return window['go']['main']['App']['SaveMateriality'](arg1);
+}
+
+export function SaveTaxFiling(arg1) {
+  return window['go']['main']['App']['SaveTaxFiling'](arg1);
+}
+
 export function SaveVoucher(arg1) {
   return window['go']['main']['App']['SaveVoucher'](arg1);
 }
@@ -508,6 +564,10 @@ export function SetEnterpriseScale(arg1) {
 
 export function SetVATStatus(arg1) {
   return window['go']['main']['App']['SetVATStatus'](arg1);
+}
+
+export function ShareholderPaid(arg1) {
+  return window['go']['main']['App']['ShareholderPaid'](arg1);
 }
 
 export function Statement(arg1) {
@@ -536,6 +596,22 @@ export function Summary(arg1) {
 
 export function SummaryByPeriod(arg1, arg2) {
   return window['go']['main']['App']['SummaryByPeriod'](arg1, arg2);
+}
+
+export function TaxFilingKinds() {
+  return window['go']['main']['App']['TaxFilingKinds']();
+}
+
+export function TaxFilings(arg1) {
+  return window['go']['main']['App']['TaxFilings'](arg1);
+}
+
+export function TaxReturn(arg1) {
+  return window['go']['main']['App']['TaxReturn'](arg1);
+}
+
+export function TaxReturnKinds() {
+  return window['go']['main']['App']['TaxReturnKinds']();
 }
 
 export function TaxTableInfo() {
@@ -578,6 +654,10 @@ export function VoidAmortization(arg1) {
   return window['go']['main']['App']['VoidAmortization'](arg1);
 }
 
+export function VoidTaxFiling(arg1) {
+  return window['go']['main']['App']['VoidTaxFiling'](arg1);
+}
+
 export function VoucherDetail(arg1) {
   return window['go']['main']['App']['VoucherDetail'](arg1);
 }
@@ -588,4 +668,8 @@ export function VoucherMetaInfo() {
 
 export function Vouchers(arg1) {
   return window['go']['main']['App']['Vouchers'](arg1);
+}
+
+export function Workpaper(arg1) {
+  return window['go']['main']['App']['Workpaper'](arg1);
 }

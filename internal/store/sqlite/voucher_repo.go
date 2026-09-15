@@ -1203,8 +1203,20 @@ func (r *VoucherRepo) DeleteDraft(ctx context.Context, id int64) error {
 		if voucher.Status(status) != voucher.StatusDraft {
 			return fmt.Errorf("%w（当前状态 %s）", ErrNotDraft, status)
 		}
+		// ★ 附件关联也要一起删。
+		//
+		// attachment 的外键指向 voucher(id)，但 owner_id 是多态的、
+		// 没有外键约束，所以不会自动级联。留着这条关联有两重害处：
+		// 一是它指向一张不存在的凭证，二是**物理文件永远进不了
+		// 「孤儿附件」列表**（被认为还有人引用），磁盘空间再也回收不了。
+		// 只删关系，不删文件实体 —— 同一份文件可能还挂在别处。
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM attachment WHERE owner_type = 'voucher' AND owner_id = ?`,
+			id); err != nil {
+			return translateErr(err)
+		}
 		// voucher_entry 有 ON DELETE CASCADE；草稿没有总账分录，
-		// 因此删完这两处不会留下任何孤儿数据。
+		// 因此删完不会留下任何孤儿数据。
 		if _, err := tx.Exec(ctx, `DELETE FROM voucher WHERE id = ?`, id); err != nil {
 			return translateErr(err)
 		}

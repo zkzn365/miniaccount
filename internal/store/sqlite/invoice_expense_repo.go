@@ -740,8 +740,17 @@ func (r *AttachmentRepo) LinkDetailed(ctx context.Context, ownerType string,
 
 // AllHashes 返回全部被引用的附件 hash（去重），供「附件清理」比对。
 func (r *AttachmentRepo) AllHashes(ctx context.Context) (map[string]int, error) {
-	rows, err := r.db.sql.QueryContext(ctx,
-		`SELECT sha256, COUNT(*) FROM attachment GROUP BY sha256`)
+	// ★ 可达的 sha256 有两处：attachment（凭证/发票/报销单的附件）
+	// 与 audit_evidence（审计证据链上挂的原件）。
+	// 漏掉后者会让底稿原件被判成孤儿文件（见 service.OrphanAttachments）。
+	rows, err := r.db.sql.QueryContext(ctx, `
+		SELECT sha256, SUM(n) FROM (
+		    SELECT sha256, COUNT(*) AS n FROM attachment
+		     WHERE sha256 <> '' GROUP BY sha256
+		    UNION ALL
+		    SELECT sha256, COUNT(*) AS n FROM audit_evidence
+		     WHERE sha256 <> '' GROUP BY sha256
+		) GROUP BY sha256`)
 	if err != nil {
 		return nil, translateErr(err)
 	}

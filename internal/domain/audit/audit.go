@@ -87,6 +87,42 @@ const (
 	ActionAmortSave    Action = "amortization.save"
 	ActionAmortDelete  Action = "amortization.delete"
 
+	// 审计底稿：重要性水平与调整分录。
+	//
+	// ★ 这三个动作同样要留痕，而且比别的更要紧：
+	// 重要性水平决定「多少钱以上必须处理」，调整分录决定「账改成什么样」。
+	// 事后追查「这个门槛当时是谁定的、依据是什么」时，
+	// 日志是唯一的答案。
+	ActionWorkpaperSave   Action = "workpaper.save"
+	ActionWorkpaperDelete Action = "workpaper.delete"
+	ActionWorkpaperPost   Action = "workpaper.post"
+
+	// 审计证据链。
+	//
+	// 挂一份依据、摘一份依据都要留痕：底稿的价值在于
+	// 「这个结论当时是根据什么下的」，而依据是可以被换掉的。
+	ActionEvidenceAdd    Action = "evidence.add"
+	ActionEvidenceDelete Action = "evidence.delete"
+
+	// 生成税务计算表。
+	//
+	// 它不改账，但它决定「这个月交多少税」——
+	// 事后追溯「当时是照哪张表报的」要有据可查。
+	ActionTaxReturnView Action = "taxreturn.view"
+
+	// 税务申报台账：登记与作废都留痕。
+	//
+	// 「这一期报了没、报了多少、谁办的」在税务检查时是要答的，
+	// 而更正申报（作废重报）的过程同样要能追溯。
+	ActionTaxFilingSave Action = "taxfiling.save"
+	ActionTaxFilingVoid Action = "taxfiling.void"
+
+	// 生成审计与鉴证文书草稿。
+	//
+	// 这三份文书对外出去要签字盖章，事后要能回答
+	// 「这一稿是谁、什么时候、按哪一期数据生成的」。
+	ActionAuditDocDraft Action = "auditdoc.draft"
+
 	// 人事异动的三个动作。
 	//
 	// ★ 也单列，不并进 ActionEmployeeSave。
@@ -181,6 +217,15 @@ var actionLabels = map[Action]string{
 	ActionAssetAccrue:      "计提折旧与摊销",
 	ActionAmortSave:        "维护待摊项目",
 	ActionAmortDelete:      "删除待摊项目",
+	ActionWorkpaperSave:    "维护审计底稿",
+	ActionWorkpaperDelete:  "删除审计底稿",
+	ActionWorkpaperPost:    "审计调整生成凭证",
+	ActionEvidenceAdd:      "挂审计依据",
+	ActionEvidenceDelete:   "摘审计依据",
+	ActionTaxReturnView:    "生成税务计算表",
+	ActionTaxFilingSave:    "登记税务申报",
+	ActionTaxFilingVoid:    "作废税务申报",
+	ActionAuditDocDraft:    "生成审计文书草稿",
 
 	ActionEmployeeResign:   "员工离职",
 	ActionEmployeeTransfer: "员工转部门",

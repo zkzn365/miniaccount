@@ -242,6 +242,18 @@ func (s *Store) Exists(hash string) bool {
 	return err == nil
 }
 
+// Size 返回某个 hash 的文件大小；文件不在或 hash 非法时返回 0。
+//
+// 单独一个方法而不是让调用方 Walk 一遍：Walk 要扫整个目录，
+// 而「这条证据的文件多大」是列表页每次渲染都要问的问题。
+func (s *Store) Size(hash string) int64 {
+	fi, err := os.Stat(s.MustPath(hash))
+	if err != nil {
+		return 0
+	}
+	return fi.Size()
+}
+
 // Delete 删除一个附件的物理文件。
 //
 // 调用方必须先确认没有其他记录引用它 —— 内容寻址意味着一个文件

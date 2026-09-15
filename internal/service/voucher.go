@@ -929,7 +929,16 @@ func (s *Service) OrphanAttachments(ctx context.Context) ([]AttachmentInfo, erro
 		return nil, err
 	}
 	used := map[string]bool{}
-	rows, err := s.db.SQL().QueryContext(ctx, `SELECT DISTINCT sha256 FROM attachment`)
+	// ★ 可达的 sha256 有两处：attachment 表（凭证/发票/报销单的附件）
+	// 与 audit_evidence 表（审计证据链上挂的原件）。
+	//
+	// 只查 attachment 会怎样：审计底稿上那份「折旧计算表」被列出成
+	// 孤儿文件，而界面在旁边写着「请自行确认后再清理 .files 目录」——
+	// 用户照着做，底稿的全部依据就变成「原件已丢失」。
+	rows, err := s.db.SQL().QueryContext(ctx, `
+		SELECT DISTINCT sha256 FROM attachment WHERE sha256 <> ''
+		UNION
+		SELECT DISTINCT sha256 FROM audit_evidence WHERE sha256 <> ''`)
 	if err != nil {
 		return nil, translate(err)
 	}

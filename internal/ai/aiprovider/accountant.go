@@ -156,6 +156,10 @@ type AccountantReply struct {
 	Aux *AuxProposal
 	// HR 非空表示会计提议一次人事异动（离职 / 转部门 / 调薪）。
 	HR *HRProposal
+	// Adjustment 非空表示会计提议登记一笔审计调整，等用户确认。
+	Adjustment *AdjustmentProposal
+	// Evidence 非空表示会计提议给某条结论挂一份依据，等用户确认。
+	Evidence *EvidenceProposal
 	// Proposal 非空表示会计给出了凭证提议（**尚未过护栏**）。
 	Proposal *ai.Proposal
 	// Answer 非空表示会计给的是一份**专业答复**（不是凭证）。
@@ -246,6 +250,22 @@ func (a *Accountant) Reply(ctx context.Context, history []Message) (*AccountantR
 					perr, res.Asked.Args)
 			}
 			reply.HR = p
+			return reply, out, nil
+		case "propose_evidence":
+			p, perr := ParseEvidenceProposal(res.Asked.Args)
+			if perr != nil {
+				return reply, out, fmt.Errorf("ai: 解析证据提议失败（%w）：%s",
+					perr, res.Asked.Args)
+			}
+			reply.Evidence = p
+			return reply, out, nil
+		case "propose_adjustment":
+			p, perr := ParseAdjustmentProposal(res.Asked.Args)
+			if perr != nil {
+				return reply, out, fmt.Errorf("ai: 解析审计调整提议失败（%w）：%s",
+					perr, res.Asked.Args)
+			}
+			reply.Adjustment = p
 			return reply, out, nil
 		}
 		q, qerr := ParseQuestion(res.Asked.Args)

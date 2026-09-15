@@ -12,6 +12,11 @@ import (
 
 	"miniaccount/internal/ai/aiprovider"
 	"miniaccount/internal/domain/ai"
+	"miniaccount/internal/domain/evidence"
+	"miniaccount/internal/domain/ledger"
+	"miniaccount/internal/domain/money"
+	"miniaccount/internal/domain/period"
+	"miniaccount/internal/domain/workpaper"
 	"miniaccount/internal/store/sqlite"
 )
 
@@ -114,6 +119,70 @@ type HRProposalView struct {
 	Detail string `json:"detail"`
 }
 
+// AdjustmentProposalView 是「建议登记一笔审计调整」。
+//
+// ★ 底下这些都只是**提议**：模型没有写底稿的能力。
+// 界面把这张卡摊开，用户按下确认之后由界面调 SaveAdjustment ——
+// 那一步才真的落库，而且走的仍是完整的凭证护栏。
+type AdjustmentProposalView struct {
+	// Period / Year / Month 是调整所属期间。
+	Period string `json:"period"`
+	Year   int    `json:"year"`
+	Month  int    `json:"month"`
+	// Kind 是 adjust | reclass。
+	Kind      string `json:"kind"`
+	KindLabel string `json:"kindLabel"`
+	Summary   string `json:"summary"`
+	Reason    string `json:"reason"`
+	Evidence  string `json:"evidence"`
+	// Amount 是借方合计（分）。
+	Amount money.Money `json:"amount"`
+	// Lines 是分录。**带辅助核算 id**：界面要原样把它们交给保存接口，
+	// 少了 id 这笔调整就会因为「缺少必需的辅助核算」被拦下，
+	// 而用户在卡片上看到的分录明明是齐的。
+	Lines []AdjustProposalLineView `json:"lines"`
+	// Detail 是一句给人看的说明。
+	Detail string `json:"detail"`
+	// Problems 是这张提议本身的问题（服务层复核后填）。
+	Problems []string `json:"problems"`
+}
+
+// AdjustProposalLineView 是提议里的一行分录。
+type AdjustProposalLineView struct {
+	LineNo      int         `json:"lineNo"`
+	AccountCode string      `json:"accountCode"`
+	AccountName string      `json:"accountName"`
+	Summary     string      `json:"summary"`
+	Debit       money.Money `json:"debit"`
+	Credit      money.Money `json:"credit"`
+	ContactID   *int64      `json:"contactId"`
+	EmployeeID  *int64      `json:"employeeId"`
+	DeptID      *int64      `json:"deptId"`
+	ProjectID   *int64      `json:"projectId"`
+	// AuxDesc 是辅助核算的文字描述。
+	AuxDesc string `json:"auxDesc"`
+}
+
+// EvidenceProposalView 是「建议把某份资料挂到某个结论下」。
+//
+// ★ 与登记调整一样：模型只提议，落库由界面调 AddEvidence 完成。
+type EvidenceProposalView struct {
+	OwnerType      string `json:"ownerType"`
+	OwnerTypeLabel string `json:"ownerTypeLabel"`
+	OwnerID        int64  `json:"ownerId"`
+	// OwnerTitle 是那条结论的一句话（由程序查出来填上）。
+	OwnerTitle   string `json:"ownerTitle"`
+	RefKind      string `json:"refKind"`
+	RefKindLabel string `json:"refKindLabel"`
+	RefID        int64  `json:"refId"`
+	RefLabel     string `json:"refLabel"`
+	Note         string `json:"note"`
+	Reason       string `json:"reason"`
+	// Problems 是这条提议现在还不能落库的原因。
+	Problems []string `json:"problems"`
+	Detail   string   `json:"detail"`
+}
+
 // CPAAnswerView 是一份**专业答复**。
 //
 // 字段与 CPA 规格里的「输出要求」十项一一对应，外加三条由**程序**
@@ -171,6 +240,10 @@ type AccountantTurn struct {
 	Aux *AuxProposalView `json:"aux,omitempty"`
 	// HR 非空表示这一条是**提议人事异动**（离职 / 转部门 / 调薪）。
 	HR *HRProposalView `json:"hr,omitempty"`
+	// Adjustment 非空表示这一条是**提议登记审计调整**，等用户确认。
+	Adjustment *AdjustmentProposalView `json:"adjustment,omitempty"`
+	// Evidence 非空表示这一条是**提议挂一份审计依据**，等用户确认。
+	Evidence *EvidenceProposalView `json:"evidence,omitempty"`
 	// Answer 非空表示这一条是**专业答复**（不是凭证）。
 	Answer *CPAAnswerView `json:"answer,omitempty"`
 	// Voucher 非空表示这一条给出了凭证草稿。
@@ -262,7 +335,8 @@ type AccountantSendInput struct {
 //
 // 「不许有写账套的工具」这句话写在注释里没有用 —— 半年后有人
 // 顺手加一个 close_period 就没人拦得住了。见 accountant_tools_test.go。
-func accountantTools(repo *sqlite.AIRepo) *aiprovider.ToolSet {
+func accountantTools(repo *sqlite.AIRepo, tax aiprovider.TaxReturnProvider,
+	doc aiprovider.AuditDocProvider, ev aiprovider.EvidenceProvider) *aiprovider.ToolSet {
 	return aiprovider.NewToolSet(
 		aiprovider.AskUserTool(),
 		aiprovider.SearchAccountsTool(repo),
@@ -280,9 +354,26 @@ func accountantTools(repo *sqlite.AIRepo) *aiprovider.ToolSet {
 		aiprovider.CheckPeriodTool(repo),
 		aiprovider.PreviewPayrollTool(repo),
 		aiprovider.GetLedgerTool(repo),
+		// 审计底稿：读现状（只读）。
+		// 模型要回答「这几笔错报加起来算不算重大」，就得先看到
+		// 重要性水平与未更正错报合计 —— 否则它只能猜一个门槛。
+		aiprovider.GetWorkpaperTool(repo),
+		// 证据链：底稿上的结论各有哪些依据（只读）。
+		// 它只说「底稿上记着哪些」，原件在不在由底稿页核对。
+		// ★ 证据链走服务层（不是 repo）：界面与 AI 必须看到同一份
+		// 「原件还在不在」的结论，否则模型会对已丢失的依据说「有依据」。
+		aiprovider.GetEvidenceTool(ev),
+		// 税务计算表：**与界面同一条计算路径**（传的是 service 自己）。
+		// 让模型自己按记忆里的税率算，它会用上过期的优惠政策。
+		aiprovider.GetTaxReturnTool(tax),
+		// 审计与鉴证文书草稿（只读）。
+		// 模型只能读，而且渲染文本里反复说清「草稿、待签字盖章」。
+		aiprovider.GetAuditDocTool(doc),
 		// 写账套的动作一律「提议 + 用户确认」，模型自己没有写库能力
 		aiprovider.ProposeNewAuxTool(),
 		aiprovider.ProposeHRActionTool(),
+		aiprovider.ProposeAdjustmentTool(),
+		aiprovider.ProposeEvidenceTool(),
 	)
 }
 
@@ -348,7 +439,7 @@ func (s *Service) AccountantSend(ctx context.Context, in AccountantSendInput) (*
 	// 3. 跑一轮会计
 	acct := &aiprovider.Accountant{
 		Provider: prov,
-		Tools:    accountantTools(s.db.AI()),
+		Tools:    accountantTools(s.db.AI(), s, s, s),
 		Options: aiprovider.AgentOptions{
 			MaxRounds: 4, MaxTokens: 2048, Temperature: 0,
 		},
@@ -420,6 +511,38 @@ func (s *Service) AccountantSend(ctx context.Context, in AccountantSendInput) (*
 			Text:  v.Detail,
 			HR:    v,
 			Model: reply.Model, TokensIn: reply.TokensIn, TokensOut: reply.TokensOut,
+			At: time.Now().Format(time.RFC3339),
+		})
+		accountantSessions.touch(st)
+		return &st.view, nil
+	}
+
+	// 3c'. 审计调整提议：同样停下来等用户确认。
+	//
+	// ★ 底稿不是账簿，但它决定账要怎么改 —— 更不能让模型自己动手。
+	if reply.Adjustment != nil {
+		st.pending = nil
+		v := s.adjustmentProposalView(ctx, reply.Adjustment)
+		st.view.Turns = append(st.view.Turns, AccountantTurn{
+			Role:       "accountant",
+			Text:       v.Detail,
+			Adjustment: v,
+			Model:      reply.Model, TokensIn: reply.TokensIn, TokensOut: reply.TokensOut,
+			At: time.Now().Format(time.RFC3339),
+		})
+		accountantSessions.touch(st)
+		return &st.view, nil
+	}
+
+	// 3c''. 证据提议：同样停下来等用户确认
+	if reply.Evidence != nil {
+		st.pending = nil
+		v := s.evidenceProposalView(ctx, reply.Evidence)
+		st.view.Turns = append(st.view.Turns, AccountantTurn{
+			Role:     "accountant",
+			Text:     v.Detail,
+			Evidence: v,
+			Model:    reply.Model, TokensIn: reply.TokensIn, TokensOut: reply.TokensOut,
 			At: time.Now().Format(time.RFC3339),
 		})
 		accountantSessions.touch(st)
@@ -634,6 +757,137 @@ func answerView(a *aiprovider.Answer) *CPAAnswerView {
 	}
 	v.Escalation = a.EscalationReasons()
 	return v
+}
+
+// evidenceProposalView 把证据提议补成人看得懂的一张卡。
+//
+// ★ 与登记调整同一套做法：模型只给 id，名字由这里查出来填上 ——
+// 让模型写名字，它会写一个「听起来对」的名字，而用户在一张
+// 写着别的凭证号的卡片上按确认。
+func (s *Service) evidenceProposalView(ctx context.Context,
+	p *aiprovider.EvidenceProposal) *EvidenceProposalView {
+
+	owner := evidence.OwnerType(p.OwnerType)
+	v := &EvidenceProposalView{
+		OwnerType: p.OwnerType, OwnerTypeLabel: owner.Label(), OwnerID: p.OwnerID,
+		RefKind: p.RefKind, RefID: p.RefID, RefLabel: p.RefLabel,
+		Note: p.Note, Reason: p.Reason,
+	}
+	if k, ok := evidence.RefKind(p.RefKind), true; ok {
+		v.RefKindLabel = k.Label()
+	}
+
+	// 结论的一句话
+	switch owner {
+	case evidence.OwnerAdjustment:
+		if a, err := s.db.Workpapers().Adjustment(ctx, p.OwnerID); err == nil {
+			v.OwnerTitle = fmt.Sprintf("%s %s %s", a.Code, a.Summary, a.Amount())
+		} else {
+			v.Problems = append(v.Problems, "找不到这条审计调整："+err.Error())
+		}
+	case evidence.OwnerMateriality, evidence.OwnerConclusion:
+		y, m := int(p.OwnerID/100), int(p.OwnerID%100)
+		k := period.NewKey(y, m)
+		if !k.Valid() {
+			v.Problems = append(v.Problems,
+				fmt.Sprintf("结论 id %d 里读不出会计期间（应当形如 202503）", p.OwnerID))
+		} else {
+			v.OwnerTitle = owner.Label() + "（" + k.String() + "）"
+		}
+	}
+	// 资料的名字（单据类由程序查）
+	if v.RefLabel == "" && p.RefID > 0 {
+		label, err := s.describeRef(ctx, evidence.RefKind(p.RefKind), p.RefID)
+		if err != nil {
+			v.Problems = append(v.Problems, err.Error())
+		} else {
+			v.RefLabel = label
+		}
+	}
+
+	v.Detail = fmt.Sprintf("建议为%s「%s」挂一份依据：%s。%s",
+		v.OwnerTypeLabel, v.OwnerTitle, v.RefLabel, v.Reason)
+	if len(v.Problems) > 0 {
+		v.Detail += "\n注意：这条提议现在还不能落库 —— " + strings.Join(v.Problems, "；")
+	}
+	return v
+}
+
+// adjustmentProposalView 把审计调整提议补成人看得懂的一张卡。
+//
+// ★ 模型只给科目编码与辅助核算 id，名字由这里查出来填上 ——
+// 与人事异动同一套理由：让模型写名字，它会写一个「听起来对」的名字，
+// 而用户在一张写着别的名字的卡片上按确认。
+//
+// 另外这里还要做一件模型做不到的事：**复核**。
+// 提议本身成形（借贷平、有依据）不代表能登记 ——
+// 那些要拿账套真实的科目树来判。所以这里直接用
+// SaveAdjustment 那一套校验跑一遍，把问题写在卡片上：
+// 用户按确认之前就该看到「这个科目不存在」，而不是按下去才报错。
+func (s *Service) adjustmentProposalView(ctx context.Context,
+	p *aiprovider.AdjustmentProposal) *AdjustmentProposalView {
+
+	v := &AdjustmentProposalView{
+		Period: p.Period, Kind: p.Kind, KindLabel: p.KindLabel(),
+		Summary: p.Summary, Reason: p.Reason, Evidence: p.Evidence,
+		Amount: p.TotalDebit(), Lines: []AdjustProposalLineView{},
+	}
+	if k, err := timeParsePeriod(p.Period); err == nil {
+		v.Year, v.Month = k.Year, k.Month
+	}
+	names, _ := s.accountNames(ctx)
+	contactNames, _ := s.contactNames(ctx)
+	deptNames, _ := s.departmentNames(ctx)
+	for i, l := range p.Lines {
+		v.Lines = append(v.Lines, AdjustProposalLineView{
+			LineNo: i + 1, AccountCode: l.AccountCode, AccountName: names[l.AccountCode],
+			Summary: l.Summary, Debit: l.Debit, Credit: l.Credit,
+			ContactID: l.ContactID, EmployeeID: l.EmployeeID,
+			DeptID: l.DeptID, ProjectID: l.ProjectID,
+			AuxDesc: describeAux(ledger.Aux{
+				ContactID: l.ContactID, EmployeeID: l.EmployeeID,
+				DeptID: l.DeptID, ProjectID: l.ProjectID,
+			}, contactNames, deptNames),
+		})
+	}
+
+	// 拿账套的真实科目树复核一遍
+	adj := workpaper.Adjustment{
+		Period: period.NewKey(v.Year, v.Month), Code: "（提议）",
+		Kind: workpaper.AdjustKind(p.Kind), Summary: p.Summary,
+		Reason: p.Reason, Evidence: p.Evidence,
+	}
+	for _, l := range p.Lines {
+		adj.Lines = append(adj.Lines, workpaper.AdjustLine{
+			AccountCode: l.AccountCode, Summary: l.Summary,
+			Debit: l.Debit, Credit: l.Credit,
+			ContactID: l.ContactID, EmployeeID: l.EmployeeID,
+			DeptID: l.DeptID, ProjectID: l.ProjectID,
+		})
+	}
+	if err := s.validateAdjustment(ctx, adj); err != nil {
+		v.Problems = append(v.Problems, err.Error())
+	}
+
+	v.Detail = fmt.Sprintf("建议登记%s %s：%s，金额 %s。依据：%s",
+		v.KindLabel, v.Period, p.Summary, v.Amount, p.Reason)
+	if len(v.Problems) > 0 {
+		v.Detail += "\n注意：这笔调整现在还不能登记 —— " + strings.Join(v.Problems, "；")
+	}
+	return v
+}
+
+// timeParsePeriod 解析 "2026-09"（服务层用的是 period.Key）。
+func timeParsePeriod(s string) (period.Key, error) {
+	var y, m int
+	if _, err := fmt.Sscanf(strings.TrimSpace(s), "%d-%d", &y, &m); err != nil {
+		return period.Key{}, fmt.Errorf("会计期间 %q 格式不对，应为 2026-09", s)
+	}
+	k := period.NewKey(y, m)
+	if !k.Valid() {
+		return k, fmt.Errorf("会计期间 %q 非法", s)
+	}
+	return k, nil
 }
 
 // hrProposalView 把提议补成人看得懂的一张卡。

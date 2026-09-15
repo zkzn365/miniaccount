@@ -117,6 +117,11 @@ const (
 	SourceDepreciation Source = "depreciation"
 	// SourceAmortization 是长期待摊费用摊销。
 	SourceAmortization Source = "amortization"
+	// SourceAudit 是审计调整生成的凭证。
+	//
+	// 它与其他来源的区别在于：这张凭证后面站着一笔**调整底稿**
+	// （谁调的、依据是什么、证据在哪）。查账时点开凭证要能回到那张底稿。
+	SourceAudit Source = "audit"
 )
 
 // Label 返回中文名。
@@ -142,6 +147,8 @@ func (s Source) Label() string {
 		return "折旧"
 	case SourceAmortization:
 		return "摊销"
+	case SourceAudit:
+		return "审计调整"
 	default:
 		return string(s)
 	}

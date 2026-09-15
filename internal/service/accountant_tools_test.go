@@ -29,7 +29,7 @@ import (
 // 期间已经关了，用户得先反结账、冲销结转凭证、再重来一遍。
 // 让 AI 有能力按下这个按钮，收益只是省一次点击。
 func TestAccountantToolsHaveNoIrreversibleActions(t *testing.T) {
-	ts := accountantTools(nil)
+	ts := accountantTools(nil, nil, nil, nil)
 	if ts.Len() == 0 {
 		t.Fatal("工具集为空 —— 这条测试就失去意义了")
 	}
@@ -46,9 +46,15 @@ func TestAccountantToolsHaveNoIrreversibleActions(t *testing.T) {
 		"ask_user",              // 追问（终止型）
 		"check_period",          // 本月体检
 		"find_similar_vouchers", // 历史同类
+		"get_audit_draft",       // 审计与鉴证文书草稿（只读）
+		"get_evidence",          // 审计证据链（只读）
 		"get_ledger",            // 明细账
 		"get_report",            // 四张报表
+		"get_tax_return",        // 税务计算表（只读，与界面同一条计算路径）
+		"get_workpaper",         // 审计底稿（只读：重要性水平 / 未更正错报 / 已登记调整）
 		"preview_payroll",       // 五险一金与个税试算
+		"propose_adjustment",    // 登记审计调整（终止型）
+		"propose_evidence",      // 挂审计依据（终止型）
 		"propose_hr_action",     // 离职 / 转部门 / 调薪（终止型）
 		"propose_new_aux",       // 新建部门 / 员工（终止型）
 		"search_accounts",
@@ -109,7 +115,7 @@ func TestAccountantToolsHaveNoIrreversibleActions(t *testing.T) {
 // 反过来说：如果某个工具既会写、又不是终止型，循环就会继续往下跑，
 // 模型可以自己把改动落下去 —— 那就没有「用户确认」这一步了。
 func TestAccountantWriteToolsAreTerminal(t *testing.T) {
-	ts := accountantTools(nil)
+	ts := accountantTools(nil, nil, nil, nil)
 
 	// 允许改账套的（全部必须是终止型）
 	writers := []string{"propose_new_aux", "propose_hr_action"}
@@ -154,7 +160,7 @@ func TestAccountantWriteToolsAreTerminal(t *testing.T) {
 // ★ 模型选工具**完全依赖**这段描述：写成「查询」它不知道该在什么时候用，
 // 写成「用户问『这个月社保扣多少』时用它」它才会用对时机。
 func TestAccountantToolDescriptions(t *testing.T) {
-	ts := accountantTools(nil)
+	ts := accountantTools(nil, nil, nil, nil)
 	for _, name := range ts.Names() {
 		tool, _ := ts.Get(name)
 		if len([]rune(tool.Description)) < 20 {

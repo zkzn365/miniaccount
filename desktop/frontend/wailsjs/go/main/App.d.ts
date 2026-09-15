@@ -32,6 +32,8 @@ export function Accrue(arg1:main.AccrueRequest):Promise<service.AccrualResult>;
 
 export function ActiveContacts(arg1:string,arg2:string):Promise<Array<service.ActiveContactsView>>;
 
+export function AddEvidence(arg1:main.AddEvidenceRequest):Promise<service.EvidenceView>;
+
 export function AdjustSalary(arg1:main.AdjustSalaryRequest):Promise<service.EmployeeView>;
 
 export function AgingReport(arg1:main.AgingRequest):Promise<service.AgingView>;
@@ -48,7 +50,13 @@ export function Attachments(arg1:main.AttachmentQueryRequest):Promise<Array<serv
 
 export function AuditAttachments(arg1:number,arg2:number):Promise<main.AttachmentAudit>;
 
+export function AuditDoc(arg1:main.AuditDocRequest):Promise<service.AuditDocView>;
+
+export function AuditDocKinds():Promise<Array<service.AuditDocKindOption>>;
+
 export function AuditLog(arg1:service.AuditQuery):Promise<main.AuditLogPage>;
+
+export function AuditOpinions():Promise<Array<service.OpinionOption>>;
 
 export function AuditSettings():Promise<service.LogSettings>;
 
@@ -108,6 +116,8 @@ export function DefaultBookDir():Promise<string>;
 
 export function DeleteAccount(arg1:string):Promise<void>;
 
+export function DeleteAdjustment(arg1:number):Promise<service.WorkpaperView>;
+
 export function DeleteAmortization(arg1:number):Promise<void>;
 
 export function DeleteAsset(arg1:number):Promise<void>;
@@ -115,6 +125,10 @@ export function DeleteAsset(arg1:number):Promise<void>;
 export function DeleteContact(arg1:number):Promise<void>;
 
 export function DeleteDepartment(arg1:number):Promise<void>;
+
+export function DeleteEvidence(arg1:main.DeleteEvidenceRequest):Promise<service.EvidenceView>;
+
+export function DeleteMateriality(arg1:main.PeriodRequest):Promise<service.WorkpaperView>;
 
 export function DeleteVoucher(arg1:number):Promise<void>;
 
@@ -125,6 +139,10 @@ export function Departments():Promise<Array<service.Department>>;
 export function DisposeAsset(arg1:main.DisposeAssetRequest):Promise<service.AssetView>;
 
 export function Employees(arg1:boolean):Promise<Array<service.EmployeeView>>;
+
+export function Evidence(arg1:main.PeriodRequest):Promise<service.EvidenceView>;
+
+export function EvidenceKinds():Promise<Array<service.RefKindOption>>;
 
 export function ExportAuditLog(arg1:service.AuditQuery,arg2:string):Promise<number>;
 
@@ -168,6 +186,8 @@ export function ListBooks():Promise<main.BookList>;
 
 export function MatchBankFlows():Promise<service.BankMatchResult>;
 
+export function OpenAttachment(arg1:string):Promise<void>;
+
 export function OpenBook(arg1:string):Promise<main.BookStatus>;
 
 export function OrphanAttachments():Promise<Array<service.AttachmentInfo>>;
@@ -179,6 +199,8 @@ export function PayrollRunDetail(arg1:number):Promise<service.PayrollRunDetail>;
 export function PayrollRuns():Promise<Array<service.PayrollRunView>>;
 
 export function Periods():Promise<service.BookInfo>;
+
+export function PostAdjustment(arg1:main.PostAdjustmentRequest):Promise<service.WorkpaperView>;
 
 export function PostBankFlows(arg1:main.BankPostRequest):Promise<service.BankPostResult>;
 
@@ -226,6 +248,8 @@ export function SaveAIProvider(arg1:sqlite.AIProviderConfig):Promise<number>;
 
 export function SaveAccount(arg1:service.AccountInput):Promise<service.AccountRow>;
 
+export function SaveAdjustment(arg1:main.AdjustmentRequest):Promise<service.WorkpaperView>;
+
 export function SaveAmortization(arg1:main.AmortizationRequest):Promise<service.AmortizationView>;
 
 export function SaveAsset(arg1:main.AssetRequest):Promise<service.AssetView>;
@@ -248,6 +272,10 @@ export function SaveInsuranceSchemes(arg1:Array<payroll.InsuranceScheme>):Promis
 
 export function SaveInvoice(arg1:main.InvoiceRequest):Promise<service.InvoiceView>;
 
+export function SaveMateriality(arg1:main.MaterialityRequest):Promise<service.WorkpaperView>;
+
+export function SaveTaxFiling(arg1:main.TaxFilingRequest):Promise<service.TaxFilingListView>;
+
 export function SaveVoucher(arg1:main.VoucherRequest):Promise<service.VoucherDetail>;
 
 export function SchemeTemplate(arg1:string):Promise<payroll.InsuranceScheme>;
@@ -259,6 +287,8 @@ export function SetBankSuggestion(arg1:main.BankSuggestionRequest):Promise<servi
 export function SetEnterpriseScale(arg1:string):Promise<void>;
 
 export function SetVATStatus(arg1:main.SetVATStatusRequest):Promise<void>;
+
+export function ShareholderPaid(arg1:main.ShareholderPaidRequest):Promise<Array<service.ShareholderPaidView>>;
 
 export function Statement(arg1:main.StatementRequest):Promise<service.StatementView>;
 
@@ -273,6 +303,14 @@ export function SuggestedReconciliationName(arg1:string):Promise<string>;
 export function Summary(arg1:main.SummaryRequest):Promise<service.SummaryView>;
 
 export function SummaryByPeriod(arg1:number,arg2:number):Promise<service.SummaryView>;
+
+export function TaxFilingKinds():Promise<Array<service.TaxFilingKindOption>>;
+
+export function TaxFilings(arg1:number):Promise<service.TaxFilingListView>;
+
+export function TaxReturn(arg1:main.TaxReturnRequest):Promise<service.TaxReturnView>;
+
+export function TaxReturnKinds():Promise<Array<service.TaxReturnKindOption>>;
 
 export function TaxTableInfo():Promise<service.TaxTableInfo>;
 
@@ -294,8 +332,12 @@ export function VerifyAuditLog():Promise<audit.VerifyResult>;
 
 export function VoidAmortization(arg1:main.VoidAmortizationRequest):Promise<service.AmortizationView>;
 
+export function VoidTaxFiling(arg1:main.VoidTaxFilingRequest):Promise<service.TaxFilingListView>;
+
 export function VoucherDetail(arg1:number):Promise<service.VoucherDetail>;
 
 export function VoucherMetaInfo():Promise<main.VoucherMeta>;
 
 export function Vouchers(arg1:main.VoucherQueryRequest):Promise<Array<service.VoucherSummary>>;
+
+export function Workpaper(arg1:main.PeriodRequest):Promise<service.WorkpaperView>;

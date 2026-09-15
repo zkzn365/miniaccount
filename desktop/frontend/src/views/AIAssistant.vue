@@ -5,7 +5,7 @@ import {
 } from 'lucide-vue-next'
 import { api, notify, DRAFT_HINT } from '@/lib/api'
 import { bookkeeper, loadBookkeeper, rememberBookkeeper } from '@/lib/operator'
-import { fmtMoney } from '@/lib/format'
+import { fmtMoney, centsToYuanInput } from '@/lib/format'
 import Card from '@/components/ui/Card.vue'
 import CardHeader from '@/components/ui/CardHeader.vue'
 import CardTitle from '@/components/ui/CardTitle.vue'
@@ -21,10 +21,10 @@ import Spinner from '@/components/ui/Spinner.vue'
 // AI 记账助手 —— 一个会问的会计
 // ---------------------------------------------------------------------------
 //
-// 这里**只有**一个「业务描述」输入框。
+// 这里只有一个「业务描述」输入框。
 //
 // 原来是五样东西：业务类型、业务描述、金额、日期、对方户名、资金方向，
-// 外加一个批量记账卡片。那五样其实是**会计要问的问题**，不是用户想说的话 ——
+// 外加一个批量记账卡片。那五样其实是会计要问的问题，不是用户想说的话 ——
 // 用户脑子里的一笔业务是「昨天买了台打印机」，逼他先想清楚
 // 「这算银行流水还是自然语言」「资金方向是支出还是收入」，
 // 等于让他自己先当一遍会计。
@@ -32,7 +32,7 @@ import Spinner from '@/components/ui/Spinner.vue'
 // 所以改成对话：你说一句，缺什么会计问什么。问的方式也讲究 ——
 // 能穷举的给选项，推荐的那个放第一个（见后端 ask_user 工具）。
 //
-// ★ 会计给出的仍然是**草稿**：采纳走 AcceptAISuggestion，
+// ★ 会计给出的仍然是草稿：采纳走 AcceptAISuggestion，
 // 过账仍然要等到账期结算。这条从 0.2.3 起就是硬规则。
 
 const session = ref(null)
@@ -90,7 +90,7 @@ async function send(text, selected) {
 /**
  * 点选项：把选项文字当成用户回答发出去。
  *
- * ★ 去掉「（推荐）」后缀，但**用原始 label 作为 selected** ——
+ * ★ 去掉「（推荐）」后缀，但用原始 label 作为 selected ——
  * 后缀是给用户看的提示，不是选项内容的一部分；
  * 而 selected 要能与模型给出的选项对上。
  */
@@ -102,7 +102,7 @@ async function pick(opt) {
 /**
  * 确认新建辅助核算档案。
  *
- * ★ 建档这一步由**界面**做，不是模型做的：它只能提议。
+ * ★ 建档这一步由界面做，不是模型做的：它只能提议。
  * 与「AI 产物一律先是草稿」是同一条边界 —— 改账套的动作必须由人按下去。
  * 建完把结果当成一句用户消息发回去，会计接着往下记。
  */
@@ -135,7 +135,7 @@ async function confirmAux(turn) {
 /**
  * 确认一条人事异动。
  *
- * ★ 同样是**界面**去调绑定，不是模型动手：这三件事都改历史，
+ * ★ 同样是界面去调绑定，不是模型动手：这三件事都改历史，
  * 工资争议里要答得出「是谁什么时候办的」。
  */
 async function confirmHR(turn) {
@@ -168,6 +168,69 @@ async function confirmHR(turn) {
   if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
   notify(`已${h.kindLabel}：${h.employeeName || '员工 #' + h.employeeId}`, 'success')
   await send(`（已${h.kindLabel}，请继续）`)
+}
+
+/**
+ * 确认登记一笔审计调整。
+ *
+ * ★ 同样是界面去调绑定，不是模型动手。
+ * 底稿不是账簿，但它决定账要怎么改 —— 更不能让模型自己动手。
+ * 落库走的是与手工登记完全相同的那条路（service.SaveAdjustment），
+ * 所以凭证那套护栏（科目可记账、辅助核算齐、借贷平）一条不少。
+ */
+async function confirmAdjustment(turn) {
+  const a = turn.adjustment
+  if (!a) return
+  // ★ 与其它卡片一样先校验操作人：底稿要记清是谁登记的。
+  // 少了这一句，服务端会用默认制单人接下这笔调整，
+  // 留下一笔没有作者的底稿，而界面到后面才报「请填写操作人」。
+  if (!operator.value.trim()) {
+    notify('请先填写操作人 —— 底稿要记清这笔调整是谁登记的', 'warn')
+    return
+  }
+  deciding.value = true
+  const r = await api.saveAdjustment({
+    id: 0, year: a.year, month: a.month, code: '',
+    kind: a.kind, summary: a.summary, reason: a.reason, evidence: a.evidence,
+    operator: operator.value.trim(),
+    // ★ 辅助核算 id 必须原样带上：少了它，这笔调整会在服务端
+    // 被「缺少必需的辅助核算」拦下，而用户在卡片上看到的分录明明是齐的
+    lines: a.lines.map((l) => ({
+      accountCode: l.accountCode, summary: l.summary,
+      debitYuan: centsToYuanInput(l.debit), creditYuan: centsToYuanInput(l.credit),
+      contactId: l.contactId ?? null, employeeId: l.employeeId ?? null,
+      deptId: l.deptId ?? null, projectId: l.projectId ?? null,
+    })),
+  })
+  deciding.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify(`已登记审计调整：${a.summary}`, 'success',
+    '在「审计底稿」页可以看到它；要生成调整凭证也在那一页')
+  await send(`（已登记这笔审计调整，请继续）`)
+}
+
+/**
+ * 确认挂一份审计依据。
+ *
+ * ★ 同样是界面去调绑定：证据链是底稿的一部分，
+ * 挂错了等于给结论换了一个出处，而复核人是照着底稿核的。
+ */
+async function confirmEvidence(turn) {
+  const e = turn.evidence
+  if (!e) return
+  if (!operator.value.trim()) { notify('请填写记账人 —— 底稿要记清这份依据是谁挂上的', 'warn'); return }
+  deciding.value = true
+  const r = await api.addEvidence({
+    ownerType: e.ownerType, ownerId: e.ownerId,
+    refKind: e.refKind, refId: e.refId ?? 0,
+    refLabel: e.refLabel, note: e.note,
+    hash: '', fileName: '', dataBase64: '',
+    by: operator.value.trim(),
+  })
+  deciding.value = false
+  if (!r.ok) { notify(r.fault.message, 'error', r.fault.detail); return }
+  notify('已挂上依据', 'success', '要核对原件请到「审计底稿」页')
+  await send('（已挂上这份依据，请继续）')
 }
 
 async function reset() {
@@ -249,7 +312,7 @@ async function resetPrompt() {
   await loadPrompt()
 }
 
-// ★ 预览走的是**会计版**提示词 —— 也就是这个页面真正发出去的那一份。
+// ★ 预览走的是会计版提示词 —— 也就是这个页面真正发出去的那一份。
 // 渲染成单次任务版的话，用户看到的东西少一节「与用户对话」，
 // 而那一节恰好是「什么时候该问」。
 async function doPreview() {
@@ -360,7 +423,7 @@ const EXAMPLES = [
 
               <!-- 专业答复（CPA 十项结构）-->
               <div v-if="t.answer" class="ml-6 flex flex-col gap-2 rounded-lg border p-3 text-sm">
-                <!-- ★ 强制转人工：放在**最上面**。
+                <!-- ★ 强制转人工：放在<b>最上面</b>。
                      这是整段回答里用户最需要先看到的一句 ——
                      埋在末尾等于没写。 -->
                 <div v-if="t.answer.escalation?.length"
@@ -442,6 +505,95 @@ const EXAMPLES = [
                   </Button>
                   <span class="text-xs text-muted-foreground">
                     操作日志里记的是你的名字
+                  </span>
+                </div>
+              </div>
+
+              <!-- 审计调整提议 -->
+              <div v-if="t.adjustment" class="ml-6 rounded-lg border border-primary/40 bg-primary/5 p-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="text-sm font-medium">
+                    建议登记{{ t.adjustment.kindLabel }}（{{ t.adjustment.period }}）
+                  </p>
+                  <Badge variant="muted">{{ t.adjustment.summary }}</Badge>
+                  <span class="num text-sm">{{ fmtMoney(t.adjustment.amount) }}</span>
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground">依据：{{ t.adjustment.reason }}</p>
+                <p v-if="t.adjustment.evidence" class="mt-0.5 text-xs text-muted-foreground">
+                  证据：{{ t.adjustment.evidence }}
+                </p>
+                <table class="mt-2 w-full text-xs">
+                  <tbody>
+                    <tr v-for="l in t.adjustment.lines" :key="l.lineNo" class="border-t last:border-0">
+                      <td class="px-2 py-1">
+                        <span class="font-mono text-muted-foreground">{{ l.accountCode }}</span>
+                        {{ l.accountName || l.accountCode }}
+                        <span v-if="l.auxDesc" class="text-muted-foreground">[{{ l.auxDesc }}]</span>
+                      </td>
+                      <td class="num w-24 px-2 py-1 text-right">
+                        {{ fmtMoney(l.debit, { blankZero: true }) }}
+                      </td>
+                      <td class="num w-24 px-2 py-1 text-right">
+                        {{ fmtMoney(l.credit, { blankZero: true }) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-if="t.adjustment.problems?.length"
+                     class="mt-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+                  <p class="font-medium">这笔调整现在还不能登记</p>
+                  <ul class="mt-1 list-disc pl-5">
+                    <li v-for="(p, k) in t.adjustment.problems" :key="k">{{ p }}</li>
+                  </ul>
+                </div>
+                <div class="mt-2 flex items-center gap-2">
+                  <Button size="sm" :disabled="deciding || busy || t.adjustment.problems?.length"
+                          @click="confirmAdjustment(t)">
+                    <Check class="size-3.5" /> 登记到底稿
+                  </Button>
+                  <Button size="sm" variant="ghost" :disabled="deciding || busy"
+                          @click="send('（先不登记这笔调整）')">
+                    先不登记
+                  </Button>
+                  <span class="text-xs text-muted-foreground">
+                    只登记到底稿；要生成调整凭证请到「审计底稿」页
+                  </span>
+                </div>
+              </div>
+
+              <!-- 审计依据提议 -->
+              <div v-if="t.evidence" class="ml-6 rounded-lg border border-primary/40 bg-primary/5 p-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="text-sm font-medium">建议为{{ t.evidence.ownerTypeLabel }}挂一份依据</p>
+                  <Badge variant="muted">{{ t.evidence.refKindLabel }}</Badge>
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  结论：{{ t.evidence.ownerTitle || ('#' + t.evidence.ownerId) }}
+                </p>
+                <p class="mt-0.5 text-sm">
+                  {{ t.evidence.refLabel || ('#' + t.evidence.refId) }}
+                </p>
+                <p v-if="t.evidence.note" class="mt-0.5 text-xs text-muted-foreground">
+                  说明：{{ t.evidence.note }}
+                </p>
+                <p class="mt-0.5 text-xs text-muted-foreground">理由：{{ t.evidence.reason }}</p>
+                <div v-if="t.evidence.problems?.length"
+                     class="mt-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+                  <ul class="list-disc pl-5">
+                    <li v-for="(p, k) in t.evidence.problems" :key="k">{{ p }}</li>
+                  </ul>
+                </div>
+                <div class="mt-2 flex items-center gap-2">
+                  <Button size="sm" :disabled="deciding || busy || t.evidence.problems?.length"
+                          @click="confirmEvidence(t)">
+                    <Check class="size-3.5" /> 挂上这份依据
+                  </Button>
+                  <Button size="sm" variant="ghost" :disabled="deciding || busy"
+                          @click="send('（先不挂这份依据）')">
+                    先不挂
+                  </Button>
+                  <span class="text-xs text-muted-foreground">
+                    附扫描件请到「审计底稿 → 审计证据链」上传
                   </span>
                 </div>
               </div>

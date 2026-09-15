@@ -278,6 +278,62 @@ export namespace main {
 	        this.by = source["by"];
 	    }
 	}
+	export class AddEvidenceRequest {
+	    ownerType: string;
+	    ownerId: number;
+	    refKind: string;
+	    refId: number;
+	    refLabel: string;
+	    note: string;
+	    hash: string;
+	    fileName: string;
+	    dataBase64: string;
+	    by: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AddEvidenceRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ownerType = source["ownerType"];
+	        this.ownerId = source["ownerId"];
+	        this.refKind = source["refKind"];
+	        this.refId = source["refId"];
+	        this.refLabel = source["refLabel"];
+	        this.note = source["note"];
+	        this.hash = source["hash"];
+	        this.fileName = source["fileName"];
+	        this.dataBase64 = source["dataBase64"];
+	        this.by = source["by"];
+	    }
+	}
+	export class AdjustLineRequest {
+	    accountCode: string;
+	    summary: string;
+	    debitYuan: string;
+	    creditYuan: string;
+	    contactId?: number;
+	    employeeId?: number;
+	    deptId?: number;
+	    projectId?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AdjustLineRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accountCode = source["accountCode"];
+	        this.summary = source["summary"];
+	        this.debitYuan = source["debitYuan"];
+	        this.creditYuan = source["creditYuan"];
+	        this.contactId = source["contactId"];
+	        this.employeeId = source["employeeId"];
+	        this.deptId = source["deptId"];
+	        this.projectId = source["projectId"];
+	    }
+	}
 	export class AdjustSalaryRequest {
 	    id: number;
 	    baseSalary: string;
@@ -299,6 +355,54 @@ export namespace main {
 	        this.reason = source["reason"];
 	        this.operator = source["operator"];
 	    }
+	}
+	export class AdjustmentRequest {
+	    id: number;
+	    year: number;
+	    month: number;
+	    code: string;
+	    kind: string;
+	    summary: string;
+	    reason: string;
+	    evidence: string;
+	    lines: AdjustLineRequest[];
+	    operator: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AdjustmentRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.year = source["year"];
+	        this.month = source["month"];
+	        this.code = source["code"];
+	        this.kind = source["kind"];
+	        this.summary = source["summary"];
+	        this.reason = source["reason"];
+	        this.evidence = source["evidence"];
+	        this.lines = this.convertValues(source["lines"], AdjustLineRequest);
+	        this.operator = source["operator"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class AgingRequest {
 	    asOf: string;
@@ -411,6 +515,80 @@ export namespace main {
 	        this.ownerType = source["ownerType"];
 	        this.ownerId = source["ownerId"];
 	    }
+	}
+	export class ShareRequest {
+	    name: string;
+	    subscribedYuan: string;
+	    method: string;
+	    paidDate: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ShareRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.subscribedYuan = source["subscribedYuan"];
+	        this.method = source["method"];
+	        this.paidDate = source["paidDate"];
+	    }
+	}
+	export class AuditDocRequest {
+	    kind: string;
+	    year: number;
+	    month: number;
+	    opinion: string;
+	    basisExtra: string[];
+	    registeredCapitalYuan: string;
+	    evidence: string[];
+	    nonCash: boolean;
+	    shares: ShareRequest[];
+	    firmName: string;
+	    cpa1: string;
+	    cpa2: string;
+	    reportNo: string;
+	    reportDate: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AuditDocRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.year = source["year"];
+	        this.month = source["month"];
+	        this.opinion = source["opinion"];
+	        this.basisExtra = source["basisExtra"];
+	        this.registeredCapitalYuan = source["registeredCapitalYuan"];
+	        this.evidence = source["evidence"];
+	        this.nonCash = source["nonCash"];
+	        this.shares = this.convertValues(source["shares"], ShareRequest);
+	        this.firmName = source["firmName"];
+	        this.cpa1 = source["cpa1"];
+	        this.cpa2 = source["cpa2"];
+	        this.reportNo = source["reportNo"];
+	        this.reportDate = source["reportDate"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class AuditLogPage {
 	    page?: audit.Page;
@@ -834,6 +1012,20 @@ export namespace main {
 	        this.remark = source["remark"];
 	    }
 	}
+	export class DeleteEvidenceRequest {
+	    id: number;
+	    by: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DeleteEvidenceRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.by = source["by"];
+	    }
+	}
 	export class DepartmentRequest {
 	    id: number;
 	    code: string;
@@ -1097,6 +1289,32 @@ export namespace main {
 		}
 	}
 	
+	export class MaterialityRequest {
+	    year: number;
+	    month: number;
+	    benchmark: string;
+	    benchmarkAmountYuan: string;
+	    ratePpm: number;
+	    performancePpm: number;
+	    trivialPpm: number;
+	    note: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MaterialityRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.year = source["year"];
+	        this.month = source["month"];
+	        this.benchmark = source["benchmark"];
+	        this.benchmarkAmountYuan = source["benchmarkAmountYuan"];
+	        this.ratePpm = source["ratePpm"];
+	        this.performancePpm = source["performancePpm"];
+	        this.trivialPpm = source["trivialPpm"];
+	        this.note = source["note"];
+	    }
+	}
 	export class PayrollRunRequest {
 	    year: number;
 	    month: number;
@@ -1130,6 +1348,20 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.year = source["year"];
 	        this.month = source["month"];
+	        this.by = source["by"];
+	    }
+	}
+	export class PostAdjustmentRequest {
+	    id: number;
+	    by: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PostAdjustmentRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
 	        this.by = source["by"];
 	    }
 	}
@@ -1366,6 +1598,21 @@ export namespace main {
 	        this.note = source["note"];
 	    }
 	}
+	
+	export class ShareholderPaidRequest {
+	    year: number;
+	    month: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ShareholderPaidRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.year = source["year"];
+	        this.month = source["month"];
+	    }
+	}
 	export class StatementRequest {
 	    contactId: number;
 	    from: string;
@@ -1396,6 +1643,76 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.from = source["from"];
 	        this.to = source["to"];
+	    }
+	}
+	export class TaxFilingRequest {
+	    id: number;
+	    kind: string;
+	    year: number;
+	    month: number;
+	    status: string;
+	    filedDate: string;
+	    paidDate: string;
+	    payableYuan: string;
+	    taxAmountYuan: string;
+	    surchargeYuan: string;
+	    paidYuan: string;
+	    fromCurrentReturn: boolean;
+	    manualAmounts: boolean;
+	    channel: string;
+	    receiptNo: string;
+	    note: string;
+	    operator: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxFilingRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.kind = source["kind"];
+	        this.year = source["year"];
+	        this.month = source["month"];
+	        this.status = source["status"];
+	        this.filedDate = source["filedDate"];
+	        this.paidDate = source["paidDate"];
+	        this.payableYuan = source["payableYuan"];
+	        this.taxAmountYuan = source["taxAmountYuan"];
+	        this.surchargeYuan = source["surchargeYuan"];
+	        this.paidYuan = source["paidYuan"];
+	        this.fromCurrentReturn = source["fromCurrentReturn"];
+	        this.manualAmounts = source["manualAmounts"];
+	        this.channel = source["channel"];
+	        this.receiptNo = source["receiptNo"];
+	        this.note = source["note"];
+	        this.operator = source["operator"];
+	    }
+	}
+	export class TaxReturnRequest {
+	    kind: string;
+	    year: number;
+	    month: number;
+	    taxAdjustIncreaseYuan: string;
+	    taxAdjustDecreaseYuan: string;
+	    lossOffsetYuan: string;
+	    smallLowProfit?: boolean;
+	    urbanConstructionPpm: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxReturnRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.year = source["year"];
+	        this.month = source["month"];
+	        this.taxAdjustIncreaseYuan = source["taxAdjustIncreaseYuan"];
+	        this.taxAdjustDecreaseYuan = source["taxAdjustDecreaseYuan"];
+	        this.lossOffsetYuan = source["lossOffsetYuan"];
+	        this.smallLowProfit = source["smallLowProfit"];
+	        this.urbanConstructionPpm = source["urbanConstructionPpm"];
 	    }
 	}
 	export class TransferEmployeeRequest {
@@ -1466,6 +1783,22 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.void = source["void"];
+	    }
+	}
+	export class VoidTaxFilingRequest {
+	    id: number;
+	    by: string;
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VoidTaxFilingRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.by = source["by"];
+	        this.reason = source["reason"];
 	    }
 	}
 	export class VoucherCheckResult {
@@ -2218,6 +2551,124 @@ export namespace service {
 	        this.riskUnstated = source["riskUnstated"];
 	    }
 	}
+	export class EvidenceProposalView {
+	    ownerType: string;
+	    ownerTypeLabel: string;
+	    ownerId: number;
+	    ownerTitle: string;
+	    refKind: string;
+	    refKindLabel: string;
+	    refId: number;
+	    refLabel: string;
+	    note: string;
+	    reason: string;
+	    problems: string[];
+	    detail: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new EvidenceProposalView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ownerType = source["ownerType"];
+	        this.ownerTypeLabel = source["ownerTypeLabel"];
+	        this.ownerId = source["ownerId"];
+	        this.ownerTitle = source["ownerTitle"];
+	        this.refKind = source["refKind"];
+	        this.refKindLabel = source["refKindLabel"];
+	        this.refId = source["refId"];
+	        this.refLabel = source["refLabel"];
+	        this.note = source["note"];
+	        this.reason = source["reason"];
+	        this.problems = source["problems"];
+	        this.detail = source["detail"];
+	    }
+	}
+	export class AdjustProposalLineView {
+	    lineNo: number;
+	    accountCode: string;
+	    accountName: string;
+	    summary: string;
+	    debit: number;
+	    credit: number;
+	    contactId?: number;
+	    employeeId?: number;
+	    deptId?: number;
+	    projectId?: number;
+	    auxDesc: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AdjustProposalLineView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.lineNo = source["lineNo"];
+	        this.accountCode = source["accountCode"];
+	        this.accountName = source["accountName"];
+	        this.summary = source["summary"];
+	        this.debit = source["debit"];
+	        this.credit = source["credit"];
+	        this.contactId = source["contactId"];
+	        this.employeeId = source["employeeId"];
+	        this.deptId = source["deptId"];
+	        this.projectId = source["projectId"];
+	        this.auxDesc = source["auxDesc"];
+	    }
+	}
+	export class AdjustmentProposalView {
+	    period: string;
+	    year: number;
+	    month: number;
+	    kind: string;
+	    kindLabel: string;
+	    summary: string;
+	    reason: string;
+	    evidence: string;
+	    amount: number;
+	    lines: AdjustProposalLineView[];
+	    detail: string;
+	    problems: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AdjustmentProposalView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.period = source["period"];
+	        this.year = source["year"];
+	        this.month = source["month"];
+	        this.kind = source["kind"];
+	        this.kindLabel = source["kindLabel"];
+	        this.summary = source["summary"];
+	        this.reason = source["reason"];
+	        this.evidence = source["evidence"];
+	        this.amount = source["amount"];
+	        this.lines = this.convertValues(source["lines"], AdjustProposalLineView);
+	        this.detail = source["detail"];
+	        this.problems = source["problems"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class HRProposalView {
 	    kind: string;
 	    kindLabel: string;
@@ -2280,6 +2731,8 @@ export namespace service {
 	    question?: AccountantQuestion;
 	    aux?: AuxProposalView;
 	    hr?: HRProposalView;
+	    adjustment?: AdjustmentProposalView;
+	    evidence?: EvidenceProposalView;
 	    answer?: CPAAnswerView;
 	    voucher?: VoucherDraft;
 	    failures?: string[];
@@ -2302,6 +2755,8 @@ export namespace service {
 	        this.question = this.convertValues(source["question"], AccountantQuestion);
 	        this.aux = this.convertValues(source["aux"], AuxProposalView);
 	        this.hr = this.convertValues(source["hr"], HRProposalView);
+	        this.adjustment = this.convertValues(source["adjustment"], AdjustmentProposalView);
+	        this.evidence = this.convertValues(source["evidence"], EvidenceProposalView);
 	        this.answer = this.convertValues(source["answer"], CPAAnswerView);
 	        this.voucher = this.convertValues(source["voucher"], VoucherDraft);
 	        this.failures = source["failures"];
@@ -2527,6 +2982,104 @@ export namespace service {
 	        this.kind = source["kind"];
 	        this.kindLabel = source["kindLabel"];
 	    }
+	}
+	export class AdjustLineView {
+	    lineNo: number;
+	    accountCode: string;
+	    accountName: string;
+	    summary: string;
+	    debit: number;
+	    credit: number;
+	    auxDesc: string;
+	    contactId?: number;
+	    employeeId?: number;
+	    deptId?: number;
+	    projectId?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AdjustLineView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.lineNo = source["lineNo"];
+	        this.accountCode = source["accountCode"];
+	        this.accountName = source["accountName"];
+	        this.summary = source["summary"];
+	        this.debit = source["debit"];
+	        this.credit = source["credit"];
+	        this.auxDesc = source["auxDesc"];
+	        this.contactId = source["contactId"];
+	        this.employeeId = source["employeeId"];
+	        this.deptId = source["deptId"];
+	        this.projectId = source["projectId"];
+	    }
+	}
+	
+	
+	export class AdjustmentView {
+	    id: number;
+	    code: string;
+	    kind: string;
+	    kindLabel: string;
+	    summary: string;
+	    reason: string;
+	    evidence: string;
+	    amount: number;
+	    balanced: boolean;
+	    booked: boolean;
+	    posted: boolean;
+	    voucherId?: number;
+	    stateLabel: string;
+	    voucherLabel: string;
+	    lines: AdjustLineView[];
+	    createdBy: string;
+	    reviewedBy: string;
+	    problems: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AdjustmentView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.code = source["code"];
+	        this.kind = source["kind"];
+	        this.kindLabel = source["kindLabel"];
+	        this.summary = source["summary"];
+	        this.reason = source["reason"];
+	        this.evidence = source["evidence"];
+	        this.amount = source["amount"];
+	        this.balanced = source["balanced"];
+	        this.booked = source["booked"];
+	        this.posted = source["posted"];
+	        this.voucherId = source["voucherId"];
+	        this.stateLabel = source["stateLabel"];
+	        this.voucherLabel = source["voucherLabel"];
+	        this.lines = this.convertValues(source["lines"], AdjustLineView);
+	        this.createdBy = source["createdBy"];
+	        this.reviewedBy = source["reviewedBy"];
+	        this.problems = source["problems"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class AgingBucketView {
 	    label: string;
@@ -2884,6 +3437,120 @@ export namespace service {
 	        this.label = source["label"];
 	    }
 	}
+	export class AuditDocInputView {
+	    key: string;
+	    label: string;
+	    hint: string;
+	    value: string;
+	    fromBook: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AuditDocInputView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.label = source["label"];
+	        this.hint = source["hint"];
+	        this.value = source["value"];
+	        this.fromBook = source["fromBook"];
+	    }
+	}
+	export class AuditDocKindOption {
+	    value: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AuditDocKindOption(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.label = source["label"];
+	    }
+	}
+	export class AuditDocSectionView {
+	    no: string;
+	    title: string;
+	    body: string;
+	    source: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AuditDocSectionView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.no = source["no"];
+	        this.title = source["title"];
+	        this.body = source["body"];
+	        this.source = source["source"];
+	    }
+	}
+	export class AuditDocView {
+	    kind: string;
+	    kindLabel: string;
+	    title: string;
+	    company: string;
+	    period: string;
+	    opinion: string;
+	    opinionStr: string;
+	    sections: AuditDocSectionView[];
+	    inputs: AuditDocInputView[];
+	    missing: string[];
+	    canIssue: boolean;
+	    draft: boolean;
+	    submittable: boolean;
+	    signature: string;
+	    policyNote: string;
+	    concludes: string;
+	    fullText: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AuditDocView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.kindLabel = source["kindLabel"];
+	        this.title = source["title"];
+	        this.company = source["company"];
+	        this.period = source["period"];
+	        this.opinion = source["opinion"];
+	        this.opinionStr = source["opinionStr"];
+	        this.sections = this.convertValues(source["sections"], AuditDocSectionView);
+	        this.inputs = this.convertValues(source["inputs"], AuditDocInputView);
+	        this.missing = source["missing"];
+	        this.canIssue = source["canIssue"];
+	        this.draft = source["draft"];
+	        this.submittable = source["submittable"];
+	        this.signature = source["signature"];
+	        this.policyNote = source["policyNote"];
+	        this.concludes = source["concludes"];
+	        this.fullText = source["fullText"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class AuditQuery {
 	    operator: string;
 	    from: string;
@@ -3073,6 +3740,28 @@ export namespace service {
 	        this.matched = source["matched"];
 	        this.posted = source["posted"];
 	        this.ignored = source["ignored"];
+	    }
+	}
+	export class BenchmarkView {
+	    value: string;
+	    label: string;
+	    amount: number;
+	    defaultRatePpm: number;
+	    defaultRateLabel: string;
+	    usable: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new BenchmarkView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.label = source["label"];
+	        this.amount = source["amount"];
+	        this.defaultRatePpm = source["defaultRatePpm"];
+	        this.defaultRateLabel = source["defaultRateLabel"];
+	        this.usable = source["usable"];
 	    }
 	}
 	export class HealthInfo {
@@ -3960,6 +4649,134 @@ export namespace service {
 	        this.statusLabel = source["statusLabel"];
 	    }
 	}
+	export class EvidenceLinkView {
+	    id: number;
+	    refKind: string;
+	    refKindLabel: string;
+	    refId: number;
+	    refLabel: string;
+	    note: string;
+	    hash: string;
+	    fileName: string;
+	    fileSize: number;
+	    hasFile: boolean;
+	    missing: boolean;
+	    path: string;
+	    linkedBy: string;
+	    linkedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new EvidenceLinkView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.refKind = source["refKind"];
+	        this.refKindLabel = source["refKindLabel"];
+	        this.refId = source["refId"];
+	        this.refLabel = source["refLabel"];
+	        this.note = source["note"];
+	        this.hash = source["hash"];
+	        this.fileName = source["fileName"];
+	        this.fileSize = source["fileSize"];
+	        this.hasFile = source["hasFile"];
+	        this.missing = source["missing"];
+	        this.path = source["path"];
+	        this.linkedBy = source["linkedBy"];
+	        this.linkedAt = source["linkedAt"];
+	    }
+	}
+	export class EvidenceChainView {
+	    ownerType: string;
+	    ownerTypeLabel: string;
+	    ownerId: number;
+	    title: string;
+	    linkTo: string;
+	    total: number;
+	    files: number;
+	    documents: number;
+	    concludes: string;
+	    links: EvidenceLinkView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new EvidenceChainView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ownerType = source["ownerType"];
+	        this.ownerTypeLabel = source["ownerTypeLabel"];
+	        this.ownerId = source["ownerId"];
+	        this.title = source["title"];
+	        this.linkTo = source["linkTo"];
+	        this.total = source["total"];
+	        this.files = source["files"];
+	        this.documents = source["documents"];
+	        this.concludes = source["concludes"];
+	        this.links = this.convertValues(source["links"], EvidenceLinkView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
+	export class EvidenceView {
+	    period: string;
+	    chains: EvidenceChainView[];
+	    unsupported: number;
+	    broken: number;
+	    concludes: string;
+	    nextActions: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new EvidenceView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.period = source["period"];
+	        this.chains = this.convertValues(source["chains"], EvidenceChainView);
+	        this.unsupported = source["unsupported"];
+	        this.broken = source["broken"];
+	        this.concludes = source["concludes"];
+	        this.nextActions = source["nextActions"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ExportResult {
 	    path: string;
 	    kind: string;
@@ -4129,6 +4946,131 @@ export namespace service {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.recordViews = source["recordViews"];
 	        this.viewIntervalSeconds = source["viewIntervalSeconds"];
+	    }
+	}
+	export class MaterialityView {
+	    benchmark: string;
+	    benchmarkName: string;
+	    benchmarkAmount: number;
+	    ratePpm: number;
+	    rateLabel: string;
+	    performancePpm: number;
+	    performanceLabel: string;
+	    trivialPpm: number;
+	    trivialLabel: string;
+	    overall: number;
+	    performance: number;
+	    trivial: number;
+	    note: string;
+	    explain: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new MaterialityView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.benchmark = source["benchmark"];
+	        this.benchmarkName = source["benchmarkName"];
+	        this.benchmarkAmount = source["benchmarkAmount"];
+	        this.ratePpm = source["ratePpm"];
+	        this.rateLabel = source["rateLabel"];
+	        this.performancePpm = source["performancePpm"];
+	        this.performanceLabel = source["performanceLabel"];
+	        this.trivialPpm = source["trivialPpm"];
+	        this.trivialLabel = source["trivialLabel"];
+	        this.overall = source["overall"];
+	        this.performance = source["performance"];
+	        this.trivial = source["trivial"];
+	        this.note = source["note"];
+	        this.explain = source["explain"];
+	    }
+	}
+	export class MisstatementView {
+	    code: string;
+	    summary: string;
+	    kind: string;
+	    kindLabel: string;
+	    amount: number;
+	    reason: string;
+	    trivial: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MisstatementView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.summary = source["summary"];
+	        this.kind = source["kind"];
+	        this.kindLabel = source["kindLabel"];
+	        this.amount = source["amount"];
+	        this.reason = source["reason"];
+	        this.trivial = source["trivial"];
+	    }
+	}
+	export class MisstatementSummaryView {
+	    items: MisstatementView[];
+	    total: number;
+	    overall: number;
+	    performance: number;
+	    trivial: number;
+	    hasMateriality: boolean;
+	    reclassCount: number;
+	    trivialCount: number;
+	    concludes: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MisstatementSummaryView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], MisstatementView);
+	        this.total = source["total"];
+	        this.overall = source["overall"];
+	        this.performance = source["performance"];
+	        this.trivial = source["trivial"];
+	        this.hasMateriality = source["hasMateriality"];
+	        this.reclassCount = source["reclassCount"];
+	        this.trivialCount = source["trivialCount"];
+	        this.concludes = source["concludes"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class OpinionOption {
+	    value: string;
+	    label: string;
+	    hint: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new OpinionOption(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.label = source["label"];
+	        this.hint = source["hint"];
 	    }
 	}
 	export class PayrollItemView {
@@ -4384,6 +5326,20 @@ export namespace service {
 		    return a;
 		}
 	}
+	export class RefKindOption {
+	    value: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RefKindOption(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.label = source["label"];
+	    }
+	}
 	export class ReopenResult {
 	    period: string;
 	    reversed: string[];
@@ -4398,6 +5354,20 @@ export namespace service {
 	        this.period = source["period"];
 	        this.reversed = source["reversed"];
 	        this.voucherIds = source["voucherIds"];
+	    }
+	}
+	export class ShareholderPaidView {
+	    name: string;
+	    paid: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ShareholderPaidView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.paid = source["paid"];
 	    }
 	}
 	export class StatementLineView {
@@ -4659,6 +5629,180 @@ export namespace service {
 	        this.deduction = source["deduction"];
 	    }
 	}
+	export class TaxFilingKindOption {
+	    value: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxFilingKindOption(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.label = source["label"];
+	    }
+	}
+	export class TaxFilingPendingView {
+	    period: string;
+	    kind: string;
+	    kindLabel: string;
+	    payable: number;
+	    hint: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxFilingPendingView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.period = source["period"];
+	        this.kind = source["kind"];
+	        this.kindLabel = source["kindLabel"];
+	        this.payable = source["payable"];
+	        this.hint = source["hint"];
+	    }
+	}
+	export class TaxFilingView {
+	    id: number;
+	    year: number;
+	    month: number;
+	    period: string;
+	    periodLabel: string;
+	    kind: string;
+	    kindLabel: string;
+	    status: string;
+	    statusLabel: string;
+	    filedDate: string;
+	    paidDate: string;
+	    payable: number;
+	    taxAmount: number;
+	    surcharge: number;
+	    paid: number;
+	    channel: string;
+	    receiptNo: string;
+	    operator: string;
+	    note: string;
+	    voidedBy: string;
+	    voidedAt: string;
+	    voidReason: string;
+	    computed: number;
+	    diff: number;
+	    reconcile: string;
+	    summary: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxFilingView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.year = source["year"];
+	        this.month = source["month"];
+	        this.period = source["period"];
+	        this.periodLabel = source["periodLabel"];
+	        this.kind = source["kind"];
+	        this.kindLabel = source["kindLabel"];
+	        this.status = source["status"];
+	        this.statusLabel = source["statusLabel"];
+	        this.filedDate = source["filedDate"];
+	        this.paidDate = source["paidDate"];
+	        this.payable = source["payable"];
+	        this.taxAmount = source["taxAmount"];
+	        this.surcharge = source["surcharge"];
+	        this.paid = source["paid"];
+	        this.channel = source["channel"];
+	        this.receiptNo = source["receiptNo"];
+	        this.operator = source["operator"];
+	        this.note = source["note"];
+	        this.voidedBy = source["voidedBy"];
+	        this.voidedAt = source["voidedAt"];
+	        this.voidReason = source["voidReason"];
+	        this.computed = source["computed"];
+	        this.diff = source["diff"];
+	        this.reconcile = source["reconcile"];
+	        this.summary = source["summary"];
+	    }
+	}
+	export class TaxFilingListView {
+	    year: number;
+	    items: TaxFilingView[];
+	    effective: number;
+	    voided: number;
+	    pending: TaxFilingPendingView[];
+	    concludes: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxFilingListView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.year = source["year"];
+	        this.items = this.convertValues(source["items"], TaxFilingView);
+	        this.effective = source["effective"];
+	        this.voided = source["voided"];
+	        this.pending = this.convertValues(source["pending"], TaxFilingPendingView);
+	        this.concludes = source["concludes"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
+	export class TaxIdentityView {
+	    label: string;
+	    value: string;
+	    warn: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxIdentityView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.label = source["label"];
+	        this.value = source["value"];
+	        this.warn = source["warn"];
+	    }
+	}
+	export class TaxInputFieldView {
+	    key: string;
+	    label: string;
+	    hint: string;
+	    amount: string;
+	    required: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxInputFieldView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.label = source["label"];
+	        this.hint = source["hint"];
+	        this.amount = source["amount"];
+	        this.required = source["required"];
+	    }
+	}
 	export class TaxRateOption {
 	    ppm: number;
 	    label: string;
@@ -4672,6 +5816,124 @@ export namespace service {
 	        this.ppm = source["ppm"];
 	        this.label = source["label"];
 	    }
+	}
+	export class TaxReturnKeyView {
+	    label: string;
+	    amount: number;
+	    note: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxReturnKeyView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.label = source["label"];
+	        this.amount = source["amount"];
+	        this.note = source["note"];
+	    }
+	}
+	export class TaxReturnKindOption {
+	    value: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxReturnKindOption(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.label = source["label"];
+	    }
+	}
+	export class TaxReturnRowView {
+	    line: string;
+	    label: string;
+	    amount: number;
+	    source: string;
+	    note: string;
+	    emphasis: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxReturnRowView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.line = source["line"];
+	        this.label = source["label"];
+	        this.amount = source["amount"];
+	        this.source = source["source"];
+	        this.note = source["note"];
+	        this.emphasis = source["emphasis"];
+	    }
+	}
+	export class TaxReturnView {
+	    kind: string;
+	    kindLabel: string;
+	    period: string;
+	    title: string;
+	    rows: TaxReturnRowView[];
+	    keys: TaxReturnKeyView[];
+	    warnings: string[];
+	    submittable: boolean;
+	    policyNote: string;
+	    concludes: string;
+	    sources: string[];
+	    identities: TaxIdentityView[];
+	    inputFields: TaxInputFieldView[];
+	    payable: number;
+	    tax: number;
+	    surcharge: number;
+	    paid: number;
+	    filing?: TaxFilingView;
+	    filingHint: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxReturnView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.kindLabel = source["kindLabel"];
+	        this.period = source["period"];
+	        this.title = source["title"];
+	        this.rows = this.convertValues(source["rows"], TaxReturnRowView);
+	        this.keys = this.convertValues(source["keys"], TaxReturnKeyView);
+	        this.warnings = source["warnings"];
+	        this.submittable = source["submittable"];
+	        this.policyNote = source["policyNote"];
+	        this.concludes = source["concludes"];
+	        this.sources = source["sources"];
+	        this.identities = this.convertValues(source["identities"], TaxIdentityView);
+	        this.inputFields = this.convertValues(source["inputFields"], TaxInputFieldView);
+	        this.payable = source["payable"];
+	        this.tax = source["tax"];
+	        this.surcharge = source["surcharge"];
+	        this.paid = source["paid"];
+	        this.filing = this.convertValues(source["filing"], TaxFilingView);
+	        this.filingHint = source["filingHint"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class TaxTableInfo {
 	    name: string;
@@ -5127,6 +6389,72 @@ export namespace service {
 	        this.postedBy = source["postedBy"];
 	        this.lines = source["lines"];
 	    }
+	}
+	export class WorksheetRowView {
+	    accountCode: string;
+	    accountName: string;
+	    bookBalance: number;
+	    adjustDebit: number;
+	    adjustCredit: number;
+	    audited: number;
+	    adjusted: boolean;
+	    trivial: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new WorksheetRowView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accountCode = source["accountCode"];
+	        this.accountName = source["accountName"];
+	        this.bookBalance = source["bookBalance"];
+	        this.adjustDebit = source["adjustDebit"];
+	        this.adjustCredit = source["adjustCredit"];
+	        this.audited = source["audited"];
+	        this.adjusted = source["adjusted"];
+	        this.trivial = source["trivial"];
+	    }
+	}
+	export class WorkpaperView {
+	    period: string;
+	    materiality?: MaterialityView;
+	    benchmarks: BenchmarkView[];
+	    worksheet: WorksheetRowView[];
+	    misstatements: MisstatementSummaryView;
+	    adjustments: AdjustmentView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new WorkpaperView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.period = source["period"];
+	        this.materiality = this.convertValues(source["materiality"], MaterialityView);
+	        this.benchmarks = this.convertValues(source["benchmarks"], BenchmarkView);
+	        this.worksheet = this.convertValues(source["worksheet"], WorksheetRowView);
+	        this.misstatements = this.convertValues(source["misstatements"], MisstatementSummaryView);
+	        this.adjustments = this.convertValues(source["adjustments"], AdjustmentView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
