@@ -49,3 +49,10 @@ gh workflow run release.yml --repo zkzn365/miniaccount --ref main -f version=0.2
 ## 验证
 
 先验证重命名前后内容一致、Windows 文件名扫描、工作流静态检查，再执行本地 Go 构建和单元测试。已完成的本地 macOS 打包与 37 项 GUI 冒烟测试保留为前序证据。远程三平台以同一 SHA 的 Actions 实际成功及产物列表为最终依据，结果在会话交付链接。
+
+## 运行记录
+
+- 42177857943（提交 de38d04）：测试通过；Linux、Windows 构建与打包成功（Windows 已能正常检出，`AUX` 冲突解决）。macOS 失败于「编译命令行版」的 `lipo -verify_arch x86_64 arm64 <file>` 参数写法 —— 本机实测该命令把文件当成架构名，多架构参数解析不通过。
+- 修正为文件在前、每次只校验一个架构：`lipo <file> -verify_arch x86_64` 与 `lipo <file> -verify_arch arm64`，已在本地用真实 Mach-O 通用二进制验证通过（单架构校验退出码 0）。
+- Actions 日志读取需 `gh` 写入工作区外缓存，需在沙箱外执行。
+

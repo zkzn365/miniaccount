@@ -259,7 +259,8 @@ jobs:
             done
             lipo -create "$RUNNER_TEMP/miniaccount-amd64" "$RUNNER_TEMP/miniaccount-arm64" \
               -output out/miniaccount
-            lipo -verify_arch x86_64 arm64 out/miniaccount
+            lipo out/miniaccount -verify_arch x86_64
+            lipo out/miniaccount -verify_arch arm64
           else
             CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" \
               -o "out/miniaccount${ext}" ./cmd/miniaccount
@@ -282,7 +283,9 @@ jobs:
           mkdir -p out/package
           cp -R "desktop/build/bin/miniaccount.app" "out/package/小账本.app"
           cp out/miniaccount out/package/miniaccount
-          lipo -verify_arch x86_64 arm64 "out/package/小账本.app/Contents/MacOS/小账本"
+          app_bin="out/package/小账本.app/Contents/MacOS/小账本"
+          lipo "$app_bin" -verify_arch x86_64
+          lipo "$app_bin" -verify_arch arm64
           ditto -c -k out/package \
             "out/miniaccount-${{ steps.ver.outputs.version }}-${{ matrix.slug }}.zip"
 
