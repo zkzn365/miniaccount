@@ -55,4 +55,9 @@ gh workflow run release.yml --repo zkzn365/miniaccount --ref main -f version=0.2
 - 42177857943（提交 de38d04）：测试通过；Linux、Windows 构建与打包成功（Windows 已能正常检出，`AUX` 冲突解决）。macOS 失败于「编译命令行版」的 `lipo -verify_arch x86_64 arm64 <file>` 参数写法 —— 本机实测该命令把文件当成架构名，多架构参数解析不通过。
 - 修正为文件在前、每次只校验一个架构：`lipo <file> -verify_arch x86_64` 与 `lipo <file> -verify_arch arm64`，已在本地用真实 Mach-O 通用二进制验证通过（单架构校验退出码 0）。
 - Actions 日志读取需 `gh` 写入工作区外缓存，需在沙箱外执行。
+- 42179672474（提交 0834d12）：**三平台全部成功**。test、Windows、Linux、macOS 四个作业均为 success，release 按 publish=false 正确跳过。
+- 产物：macos-universal 31,088,258 字节、windows-amd64 16,187,834 字节、linux-amd64 15,537,361 字节，均未过期。
+- 三个平台的「建账事务回归测试（三平台）」「wails build」「编译命令行版」「打包」「upload-artifact」步骤全部 success；macOS 打包步骤包含两个架构的单次 `lipo -verify_arch` 校验。
+- 各压缩包按流水线定义包含：macOS 为 `小账本.app` + 通用架构 `miniaccount`；Windows 为 `小账本.exe` + `miniaccount.exe`；Linux 为 `小账本` + `miniaccount` + `说明.txt`。
+- 本地从 Azure Blob 下载产物时出现 EOF 中断（网络侧），未完成逐包解压复核；产物内容依据流水线步骤执行结果与本地产物构建逻辑，不是逐包人工校验。
 
