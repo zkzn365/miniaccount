@@ -19,6 +19,7 @@
 3. 三平台构建前各运行建账及种子事务回归用例；Linux 仍保留 go vet 与完整 go test 门禁。
 4. macOS CLI 分别编译 amd64/arm64，用 lipo 合并；将 .app 与 CLI 放入单独 staging 目录后一起压缩，不再遗漏 CLI。
 5. 保持现有前端先构建、Wails 固定版本、Linux GTK/WebKit 检测与产物命名约定。
+6. 首轮远程运行 42176600044 使用 ubuntu-latest，实际已迁移到 Ubuntu 26.04；依赖安装超过 5 分钟仍在低速下载（并非死锁），为取日志已取消。将 Linux 测试、构建和发布 runner 固定为 ubuntu-24.04，避免隐式发行版及 ABI 漂移；测试与构建任务分别设置 20/30 分钟超时。按 24.04 的 WebKitGTK 4.1 生成 Linux 使用说明，不再声称同一个 4.1 二进制安装 4.0 库就能在旧系统运行。
 
 ## 接口与数据流
 
