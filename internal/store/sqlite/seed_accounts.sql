@@ -1,8 +1,7 @@
 -- 《小企业会计准则》预置科目表（含明细）
--- 由 docs/data/gen_full_coa.py 生成，请勿手工修改
+-- 原始科目数据由 docs/data/gen_full_coa.py 生成（生成器未随仓库提供）
 -- 依据：财政部 财会〔2011〕17号 附录
-
-BEGIN TRANSACTION;
+-- 事务由调用方 WithTx 统一管理；本文件不得包含 BEGIN / COMMIT。
 
 INSERT INTO account (code,name,parent_id,level,is_leaf,root_type,category,balance_dir,aux_types,is_enabled,is_preset,remark,sort_order) VALUES ('1001','库存现金',NULL,1,1,'asset','资产类','debit','',1,1,'现金日记账',10);
 INSERT INTO account (code,name,parent_id,level,is_leaf,root_type,category,balance_dir,aux_types,is_enabled,is_preset,remark,sort_order) VALUES ('1002','银行存款',NULL,1,1,'asset','资产类','debit','',1,1,'★ 银行流水导入挂此科目；按开户行设明细',20);
@@ -195,5 +194,3 @@ INSERT INTO account (code,name,parent_id,level,is_leaf,root_type,category,balanc
 INSERT INTO account (code,name,parent_id,level,is_leaf,root_type,category,balance_dir,aux_types,is_enabled,is_preset,remark,sort_order) VALUES ('571110','营业外支出—盘亏损失',(SELECT id FROM account WHERE code='5711'),2,1,'expense','损益类','debit','',1,0,'',1890);
 INSERT INTO account (code,name,parent_id,level,is_leaf,root_type,category,balance_dir,aux_types,is_enabled,is_preset,remark,sort_order) VALUES ('571111','营业外支出—其他',(SELECT id FROM account WHERE code='5711'),2,1,'expense','损益类','debit','',1,0,'',1900);
 INSERT INTO account (code,name,parent_id,level,is_leaf,root_type,category,balance_dir,aux_types,is_enabled,is_preset,remark,sort_order) VALUES ('5801','所得税费用',NULL,1,1,'expense','损益类','debit','',1,1,'',1910);
-
-COMMIT;

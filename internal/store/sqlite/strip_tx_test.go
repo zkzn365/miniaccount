@@ -1,6 +1,9 @@
 package sqlite
 
 import (
+	"context"
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -20,6 +23,63 @@ import (
 //
 // 而 macOS/Linux 检出的是 LF，同样这行代码一路正常。
 // 这类问题本地怎么试都试不出来 —— 所以下面每一条都同时喂 LF 和 CRLF。
+
+// 内嵌数据必须能直接加入调用方事务，不能依赖文本过滤来保证原子性。
+func TestEmbeddedSeedRespectsCallerTransaction(t *testing.T) {
+	for _, ending := range []string{"LF", "CRLF"} {
+		t.Run(ending, func(t *testing.T) {
+			ctx := context.Background()
+			db, err := Open(ctx, Options{Path: filepath.Join(t.TempDir(), "seed.db")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			if err := db.Migrate(ctx); err != nil {
+				t.Fatal(err)
+			}
+			script := seedAccountsSQL
+			if ending == "CRLF" {
+				script = strings.ReplaceAll(script, "\n", "\r\n")
+			}
+			rollback := errors.New("模拟后续建账失败")
+			err = db.WithTx(ctx, func(tx *Tx) error {
+				if _, err := tx.Exec(ctx, script); err != nil {
+					return err
+				}
+				var count int
+				if err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM account").Scan(&count); err != nil {
+					return err
+				}
+				if count != 191 {
+					t.Errorf("事务内科目数 = %d，期望 191", count)
+				}
+				return rollback
+			})
+			if !errors.Is(err, rollback) {
+				t.Fatalf("预置科目不能参与外层事务：%v", err)
+			}
+			var count int
+			if err := db.SQL().QueryRowContext(ctx, "SELECT COUNT(*) FROM account").Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 0 {
+				t.Fatalf("回滚后残留 %d 个科目", count)
+			}
+			// 同库重试及幂等调用也必须成功。
+			for range 2 {
+				if err := db.SeedChartOfAccounts(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := db.SQL().QueryRowContext(ctx, "SELECT COUNT(*) FROM account").Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 191 {
+				t.Errorf("重试后科目数 = %d，期望 191", count)
+			}
+		})
+	}
+}
 
 const sampleScript = "-- 说明\n\nBEGIN TRANSACTION;\n\n" +
 	"INSERT INTO account (code) VALUES ('1001');\n" +

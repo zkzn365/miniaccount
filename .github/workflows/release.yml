@@ -4,7 +4,7 @@
 #
 #   - 推 v* 标签（`git tag v0.2.0 && git push origin v0.2.0`）
 #     → 测试 + 三平台构建 + 发一个正式 Release
-#   - 手动触发（Actions 页面点 Run workflow）→ 同上
+#   - 手动触发（Actions 页面点 Run workflow）→ 测试 + 三平台构建；可选发布 Release
 #   - 推 main / 提 PR → **只跑测试**，不做三平台构建
 #
 # 最后一条是有意的：三平台构建里 macOS runner 是 10 倍费率，
@@ -34,10 +34,15 @@ on:
         description: '版本号（例如 0.2.0；留空则用 0.0.0-dev.<日期>）'
         required: false
         default: ''
+      publish:
+        description: '同时发布 GitHub 预发布版本（关闭时仅提供 Actions 下载产物）'
+        type: boolean
+        required: false
+        default: false
 
 # 发布需要写 Release；其余只需要读。
 permissions:
-  contents: write
+  contents: read
 
 # 同一个分支/标签上的旧任务没跑完就别再开一个 ——
 # 两个 CI 同时往同一个 Release 上传产物会互相覆盖。
@@ -209,6 +214,10 @@ jobs:
           npm ci
           npm run build
 
+      - name: 建账事务回归测试（三平台）
+        shell: bash
+        run: go test ./internal/store/sqlite -run 'Test(CreateBook|EmbeddedSeed|StripTxControl)' -count=1 -timeout 120s
+
       - name: wails build
         working-directory: desktop
         shell: bash
@@ -241,8 +250,18 @@ jobs:
           ext=""
           [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
           mkdir -p out
-          go build -trimpath -ldflags "$LDFLAGS" \
-            -o "out/miniaccount${ext}" ./cmd/miniaccount
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            for arch in amd64 arm64; do
+              GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" \
+                -o "$RUNNER_TEMP/miniaccount-$arch" ./cmd/miniaccount
+            done
+            lipo -create "$RUNNER_TEMP/miniaccount-amd64" "$RUNNER_TEMP/miniaccount-arm64" \
+              -output out/miniaccount
+            lipo -verify_arch x86_64 arm64 out/miniaccount
+          else
+            CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" \
+              -o "out/miniaccount${ext}" ./cmd/miniaccount
+          fi
 
       # ---------------------------------------------------------------------
       # 打包
@@ -258,10 +277,12 @@ jobs:
           # ditto 是 macOS 上唯一能正确保留 .app 包内符号链接、
           # 权限位与扩展属性的打包方式。用 zip -r 会让 .app 在某些
           # 情况下「解压后打不开」。
-          cp -R "desktop/build/bin/miniaccount.app" "out/小账本.app"
-          ditto -c -k --keepParent "out/小账本.app" \
+          mkdir -p out/package
+          cp -R "desktop/build/bin/miniaccount.app" "out/package/小账本.app"
+          cp out/miniaccount out/package/miniaccount
+          lipo -verify_arch x86_64 arm64 "out/package/小账本.app/Contents/MacOS/小账本"
+          ditto -c -k out/package \
             "out/miniaccount-${{ steps.ver.outputs.version }}-${{ matrix.slug }}.zip"
-          rm -rf "out/小账本.app"
 
       - name: 打包（Windows）
         if: runner.os == 'Windows'
@@ -314,7 +335,11 @@ jobs:
   # ---------------------------------------------------------------------------
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish)
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -339,7 +364,7 @@ jobs:
           # 只有两种情形：
           #   推标签    → 用标签本身，标签指向这次提交
           #   手动触发  → 没有标签可用，用带日期的独立标签，免得覆盖正式版本
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             tag="${GITHUB_REF_NAME}"; title="小账本 $tag"
           else
             tag="dev-${today}-${GITHUB_RUN_NUMBER}"
@@ -415,6 +440,6 @@ jobs:
             gh release edit "$tag" --title "$title" --notes-file notes.md \
               --prerelease=$([ -n "$pre" ] && echo true || echo false)
           else
-            gh release create "$tag" "${assets[@]}" \
+            gh release create "$tag" "${assets[@]}" --target "$GITHUB_SHA" \
               --title "$title" --notes-file notes.md $pre
           fi

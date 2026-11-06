@@ -171,6 +171,51 @@ func TestCreateBookIsAtomic(t *testing.T) {
 	}
 }
 
+func TestCreateBookRollsBackAfterSeeding(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, Options{Path: filepath.Join(t.TempDir(), "rollback.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// 期间在科目之后写入，强制这一步失败才能验证之前的数据一起回滚。
+	if _, err := db.SQL().ExecContext(ctx, `CREATE TRIGGER fail_period BEFORE INSERT ON period
+		BEGIN SELECT RAISE(ABORT, 'test period failure'); END;`); err != nil {
+		t.Fatal(err)
+	}
+	in := CreateBookInput{CompanyName: "回滚测试公司", StartYear: 2026, StartMonth: 1, ThroughYear: 2026}
+	if _, err := db.CreateBook(ctx, in); err == nil || !strings.Contains(err.Error(), "test period failure") {
+		t.Fatalf("应在写入期间时失败，实际 %v", err)
+	}
+	for _, table := range []string{"book", "vat_status_history", "account", "period"} {
+		var count int
+		if err := db.SQL().QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Errorf("建账失败后 %s 残留 %d 行", table, count)
+		}
+	}
+	if _, err := db.SQL().ExecContext(ctx, "DROP TRIGGER fail_period"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CreateBook(ctx, in); err != nil {
+		t.Fatalf("同库重试建账失败：%v", err)
+	}
+	for table, want := range map[string]int{"book": 1, "vat_status_history": 1, "account": 191, "period": 12} {
+		var count int
+		if err := db.SQL().QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != want {
+			t.Errorf("重试建账后 %s 行数 = %d，期望 %d", table, count, want)
+		}
+	}
+}
+
 func TestBookUpdate(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t) // 夹具已通过 CreateBook 建好账套

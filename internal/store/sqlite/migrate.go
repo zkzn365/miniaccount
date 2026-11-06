@@ -184,8 +184,8 @@ func (db *DB) SeedChartOfAccounts(ctx context.Context) error {
 
 // stripTxControl 去掉脚本里的 BEGIN TRANSACTION / COMMIT / END TRANSACTION。
 //
-// 种子脚本由 docs/data/gen_full_coa.py 生成，自带事务控制以便单独执行；
-// 但它在这里是被我们自己的事务包裹着执行的，嵌套 BEGIN 会被 SQLite 拒绝
+// 种子脚本只包含科目数据，事务由调用方 WithTx 管理。
+// 此函数保留对旧版自带事务脚本的兼容：嵌套 BEGIN 会被 SQLite 拒绝
 // （"cannot start a transaction within a transaction"）。
 //
 // 只按**整行精确匹配**剔除，因此脚本正文里出现这些词不会受影响。
